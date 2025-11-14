@@ -1,0 +1,8 @@
+aiohttp==3.12.15
+fastapi==0.118.0
+langchain_google_genai==2.1.12
+langchain_ollama==0.3.10
+langchain_openai==0.3.34
+openai==2.1.0
+PyYAML==6.0.3
+uvicorn==0.37.0
