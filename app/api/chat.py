@@ -185,4 +185,6 @@ async def send_message(
         preferences=deps.user_preferences.model_dump(exclude_none=True),
         route_geojson=result.route_geojson,
         route_metadata=result.route_metadata,
+        itinerary=result.itinerary.model_dump() if result.itinerary else None,
+        suggested_replies=result.suggested_replies,
     )

@@ -149,5 +149,9 @@ async def test_process_message_insufficient_info():
 def test_processor_result_has_all_fields():
     """ProcessorResult содержит обязательные поля для API-ответа."""
     field_names = {f.name for f in fields(ProcessorResult)}
-    expected = {"response", "has_results", "is_complete", "route_geojson", "route_metadata"}
+    expected = {
+        "response", "has_results", "is_complete",
+        "route_geojson", "route_metadata",
+        "search_results", "itinerary", "suggested_replies",
+    }
     assert expected == field_names

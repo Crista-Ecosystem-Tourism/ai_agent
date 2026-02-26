@@ -60,6 +60,14 @@ class MessageOut(BaseModel):
         None,
         description="Метаданные маршрута: graph_id, время сборки, кол-во узлов/рёбер",
     )
+    itinerary: Optional[dict] = Field(
+        None,
+        description="Structured itinerary (days/slots/places)",
+    )
+    suggested_replies: Optional[List[dict]] = Field(
+        None,
+        description="Quick reply chips for missing preferences",
+    )
 
 class HistoryOut(BaseModel):
     session_id: str

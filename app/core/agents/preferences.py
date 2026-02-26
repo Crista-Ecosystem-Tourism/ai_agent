@@ -33,9 +33,12 @@ class PreferencesAgent:
         progress_text = "\n".join(status) if status else "Ничего не собрано"
         can_search = "ДА" if prefs.has_searchable_info() else "НЕТ"
         return (
-            "Текущее состояние предпочтений:\n"
+            "Текущее состояние предпочтений (из предыдущих сообщений):\n"
             f"{progress_text}\n\n"
-            f"Можно начинать поиск: {can_search}"
+            f"Можно начинать поиск: {can_search}\n\n"
+            "ВАЖНО: Если пользователь в ТЕКУЩЕМ сообщении упоминает новый город — "
+            "ОБЯЗАТЕЛЬНО верни его в поле city. Новый город автоматически заменит текущий. "
+            "НЕ игнорируй упоминание города из-за того, что один уже установлен."
         )
     
     def _build_status_list(self, prefs: UserPreferences) -> List[str]:

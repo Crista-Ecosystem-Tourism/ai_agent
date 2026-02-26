@@ -18,7 +18,7 @@ RAG_CONFIG = {
     "url": os.getenv("RAG_URL", "http://localhost:8001"),
     "search_endpoint": "/api/v1/search",
     "timeout": 30,
-    "top_k": 4,
+    "top_k": 8,
     "distance_threshold": 1.2
 }
 

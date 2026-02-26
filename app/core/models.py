@@ -1,7 +1,30 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from dataclasses import dataclass
 from typing import Optional, Literal, List
 import httpx
+
+
+# Нормализация неформальных / сокращённых названий городов
+# к каноническому виду, который хранится в RAG-базе.
+CITY_ALIASES: dict[str, str] = {
+    "питер": "Санкт-Петербург",
+    "спб": "Санкт-Петербург",
+    "с-пб": "Санкт-Петербург",
+    "с.петербург": "Санкт-Петербург",
+    "с.-петербург": "Санкт-Петербург",
+    "санкт петербург": "Санкт-Петербург",
+    "петербург": "Санкт-Петербург",
+    "мск": "Москва",
+    "нск": "Новосибирск",
+    "новосиб": "Новосибирск",
+    "екб": "Екатеринбург",
+    "ебург": "Екатеринбург",
+    "нижний": "Нижний Новгород",
+    "владик": "Владивосток",
+    "ростов": "Ростов-на-Дону",
+    "краснодар": "Краснодар",
+    "сочи": "Сочи",
+}
 
 
 class UserPreferences(BaseModel):
@@ -11,7 +34,19 @@ class UserPreferences(BaseModel):
     budget: Optional[Literal["эконом", "средний", "премиум", "люкс"]] = None
     activities: list[str] = Field(default_factory=list)
     duration_days: Optional[int] = None
-    
+    wants_itinerary: Optional[bool] = None
+
+    @field_validator("city", mode="before")
+    @classmethod
+    def normalize_city(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or not isinstance(v, str):
+            return v
+        stripped = v.strip()
+        if not stripped:
+            return None
+        canonical = CITY_ALIASES.get(stripped.lower())
+        return canonical if canonical else stripped
+
     def merge_with(self, new: "UserPreferences") -> "UserPreferences":
         """Merge new preferences (from current message) with existing ones.
         New non-empty values overwrite old; activities are combined."""
@@ -22,6 +57,7 @@ class UserPreferences(BaseModel):
             budget=new.budget or self.budget,
             activities=list(dict.fromkeys(self.activities + new.activities)),
             duration_days=new.duration_days if new.duration_days is not None else self.duration_days,
+            wants_itinerary=new.wants_itinerary if new.wants_itinerary is not None else self.wants_itinerary,
         )
 
     def has_searchable_info(self) -> bool:
@@ -55,6 +91,42 @@ class UserPreferences(BaseModel):
                 queries.append(activity)
         
         return queries if queries else ["отдых"]
+
+
+class SearchQueries(BaseModel):
+    """Structured output: LLM-generated search queries."""
+    queries: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=6,
+        description="3-5 diverse search queries in Russian"
+    )
+
+class RerankResult(BaseModel):
+    """Structured output: LLM-reranked place IDs."""
+    selected_ids: list[str] = Field(
+        ...,
+        description="Place IDs in ranked order, best first"
+    )
+
+
+class ItinerarySlot(BaseModel):
+    """Один слот в дне итинерария."""
+    time_label: str = Field(..., description="Время дня, например 'Утро', 'Обед', 'День', 'Вечер'")
+    place_id: str = Field(..., description="ID места из search_results")
+    place_name: str = Field(..., description="Название места для отображения")
+    note: str = Field("", description="Короткая заметка/рекомендация от ассистента")
+
+class ItineraryDay(BaseModel):
+    """Один день итинерария."""
+    day: int = Field(..., description="Номер дня (1, 2, 3...)")
+    title: str = Field(..., description="Краткое название дня, например 'Знакомство с городом'")
+    slots: list[ItinerarySlot] = Field(..., description="Слоты дня")
+
+class Itinerary(BaseModel):
+    """Structured output: полный итинерарий путешествия."""
+    days: list[ItineraryDay] = Field(..., description="Дни путешествия")
+    summary: str = Field("", description="Краткая сводка/совет по всему путешествию")
 
 
 class Place(BaseModel):

@@ -22,13 +22,12 @@ class PlacesSearchService:
                 top_k *= 2
 
             data = {
-                "query": f"{query} {city}",
+                "query": query,
                 "top_k": top_k,
+                "distance_threshold": RAG_CONFIG["distance_threshold"],
             }
-
-            # if city:
-            #     data["metadata_filter"]["city"] = city
-            # print(data)
+            if city:
+                data["metadata_filter"] = {"city": city}
             
             response = await deps.http_client.post(
                 search_url,
