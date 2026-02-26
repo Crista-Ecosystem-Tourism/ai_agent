@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionCreate(BaseModel):
@@ -39,8 +39,7 @@ class Place(BaseModel):
     postalcode: Optional[str] = None
     page_content: Optional[str] = None
     
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class SearchResult(BaseModel):
     query: str
@@ -48,15 +47,18 @@ class SearchResult(BaseModel):
     count: int
 
 class MessageOut(BaseModel):
-    message: str|List[SearchResult] = Field(
-        ..., 
-    )
+    message: str = Field(...)
+    search_results: Optional[List[SearchResult]] = Field(None)
     conversation_complete: bool = Field(default=False)
-    has_search_results: bool = Field(
-        default=False,
-    )
-    preferences: Optional[dict] = Field(
+    has_search_results: bool = Field(default=False)
+    preferences: Optional[dict] = Field(None)
+    route_geojson: Optional[dict] = Field(
         None,
+        description="GeoJSON маршрута от placesweb_backend (FeatureCollection)",
+    )
+    route_metadata: Optional[dict] = Field(
+        None,
+        description="Метаданные маршрута: graph_id, время сборки, кол-во узлов/рёбер",
     )
 
 class HistoryOut(BaseModel):

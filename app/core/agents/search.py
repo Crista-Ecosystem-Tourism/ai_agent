@@ -43,7 +43,7 @@ class SearchAgent:
         ) -> list[str]:
             try:
                 response = await ctx.deps.http_client.post(
-                    f"{ctx.deps.rag_service_url}/search",
+                    f"{ctx.deps.rag_service_url}/api/v1/search",
                     json={
                         "query": query,
                         "top_k": 10

@@ -24,7 +24,6 @@ class PlacesSearchService:
             data = {
                 "query": f"{query} {city}",
                 "top_k": top_k,
-                "metadata_filter": {}
             }
 
             # if city:

@@ -129,24 +129,27 @@ async def send_message(
 
     history = await history_service.load_for_context(session_id)
 
+    saved_prefs = await chat_srv.load_preferences(session_id)
     deps = TravelDeps(
         rag_service_url=os.getenv("RAG_URL", "http://localhost:8001/api/v1"),
         http_client=http_client,
-        user_preferences=UserPreferences()
+        user_preferences=saved_prefs,
     )
 
     try:
-        response_data, has_results, is_complete = await processor.process_message(
+        result = await processor.process_message(
             data.message,
             deps,
             history,
             generate_search_response=data.generate_text_response
         )
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Agent processing failed: {str(e)}")
+
+    await chat_srv.save_preferences(session_id, deps.user_preferences)
 
     from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
     from datetime import datetime, timezone
@@ -156,26 +159,30 @@ async def send_message(
         kind="request"
     )
 
-    if isinstance(response_data, str):
-        assistant_text = response_data
+    if isinstance(result.response, str):
+        text = result.response
+        sr = result.search_results
     else:
-        # Если структурированные данные, сериализуем в JSON-строку для истории
-        import json
-        assistant_text = json.dumps([r.model_dump() for r in response_data], ensure_ascii=False)
-    
+        sr = result.response  # List[SearchResult] from non-text path
+        count = sum(r.count for r in sr)
+        text = f"Найдено {count} мест по вашему запросу."
+
     assistant_message = ModelResponse(
-        parts=[TextPart(content=assistant_text)],
+        parts=[TextPart(content=text)],
         kind="response",
         timestamp=datetime.now(timezone.utc)
     )
-    
+
     await history_service.append_messages(session_id, [user_message, assistant_message])
 
     await chat_srv.touch(session_id)
 
     return MessageOut(
-        message=response_data,
-        conversation_complete=is_complete,
-        has_search_results=has_results,
-        preferences=deps.user_preferences.model_dump(exclude_none=True)
+        message=text,
+        search_results=[r if hasattr(r, 'model_dump') else r for r in sr] if sr else None,
+        conversation_complete=result.is_complete,
+        has_search_results=result.has_results,
+        preferences=deps.user_preferences.model_dump(exclude_none=True),
+        route_geojson=result.route_geojson,
+        route_metadata=result.route_metadata,
     )

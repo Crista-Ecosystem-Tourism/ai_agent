@@ -12,6 +12,18 @@ class UserPreferences(BaseModel):
     activities: list[str] = Field(default_factory=list)
     duration_days: Optional[int] = None
     
+    def merge_with(self, new: "UserPreferences") -> "UserPreferences":
+        """Merge new preferences (from current message) with existing ones.
+        New non-empty values overwrite old; activities are combined."""
+        return UserPreferences(
+            destination_type=new.destination_type or self.destination_type,
+            city=new.city or self.city,
+            travel_companions=new.travel_companions or self.travel_companions,
+            budget=new.budget or self.budget,
+            activities=list(dict.fromkeys(self.activities + new.activities)),
+            duration_days=new.duration_days if new.duration_days is not None else self.duration_days,
+        )
+
     def has_searchable_info(self) -> bool:
         return self.destination_type is not None or self.city is not None
     

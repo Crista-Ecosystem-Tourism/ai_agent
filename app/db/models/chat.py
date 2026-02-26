@@ -19,6 +19,7 @@ class ChatSession(Base, TimestampMixin):
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, default=None)
     user: Mapped["User"] = relationship(back_populates="sessions")  # type: ignore
     history: Mapped["ChatHistory"] = relationship(back_populates="session", uselist=False, cascade="all, delete-orphan")  # type: ignore
 

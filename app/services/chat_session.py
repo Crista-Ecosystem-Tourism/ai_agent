@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select, insert, update, delete
 
 from app.db.models.chat import ChatSession
+from app.core.models import UserPreferences
 from app.security.session_secret import hash_secret, verify_secret
 
 
@@ -116,6 +117,24 @@ class ChatSessionService:
             )).all()
             return [(r.id, r.title) for r in rows]
         
+    async def load_preferences(self, session_id: str) -> UserPreferences:
+        async with self.session_factory() as db:
+            row = (await db.execute(
+                select(ChatSession.preferences).where(ChatSession.id == session_id)
+            )).scalar_one_or_none()
+            if row:
+                return UserPreferences(**row)
+            return UserPreferences()
+
+    async def save_preferences(self, session_id: str, prefs: UserPreferences) -> None:
+        async with self.session_factory() as db:
+            await db.execute(
+                update(ChatSession)
+                .where(ChatSession.id == session_id)
+                .values(preferences=prefs.model_dump(exclude_none=True))
+            )
+            await db.commit()
+
     async def touch(self, session_id: str):
         async with self.session_factory() as db:
             now = datetime.now(timezone.utc)
