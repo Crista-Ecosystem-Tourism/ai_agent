@@ -16,6 +16,7 @@ class User(Base, TimestampMixin):
     name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auth_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 'password', 'google', 'github', ...
+    hashed_password: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     sessions: Mapped[list["ChatSession"]] = relationship(back_populates="user")  # type: ignore
 
