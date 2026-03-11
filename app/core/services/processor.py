@@ -90,6 +90,21 @@ class MessageProcessor:
                 "allow_custom": True,
             })
 
+        if not prefs.origin_city and prefs.city:
+            groups.append({
+                "category": "origin_city",
+                "label": "Город вылета",
+                "icon": "plane",
+                "options": [
+                    {"value": "Москва", "label": "Москва", "description": "SVO / DME / VKO"},
+                    {"value": "Санкт-Петербург", "label": "Санкт-Петербург", "description": "LED"},
+                    {"value": "Краснодар", "label": "Краснодар", "description": "KRR"},
+                    {"value": "Екатеринбург", "label": "Екатеринбург", "description": "SVX"},
+                    {"value": "Новосибирск", "label": "Новосибирск", "description": "OVB"},
+                ],
+                "allow_custom": True,
+            })
+
         return groups if groups else None
 
     async def process_message(
@@ -167,6 +182,7 @@ class MessageProcessor:
         deps.user_preferences = deps.user_preferences.merge_with(extracted)
 
         print(f"\nОбновленные предпочтения:")
+        print(f"   Откуда: {deps.user_preferences.origin_city}")
         print(f"   Город: {deps.user_preferences.city}")
         print(f"   Тип: {deps.user_preferences.destination_type}")
         print(f"   Компания: {deps.user_preferences.travel_companions}")

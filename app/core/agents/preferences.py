@@ -44,6 +44,7 @@ class PreferencesAgent:
     def _build_status_list(self, prefs: UserPreferences) -> List[str]:
         status = []
         fields = [
+            ("origin_city", "Откуда"),
             ("city", "Место"),
             ("destination_type", "Тип"),
             ("travel_companions", "Компания"),

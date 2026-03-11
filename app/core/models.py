@@ -30,13 +30,14 @@ CITY_ALIASES: dict[str, str] = {
 class UserPreferences(BaseModel):
     destination_type: Optional[Literal["море", "горы", "город", "природа"]] = None
     city: Optional[str] = None
+    origin_city: Optional[str] = None
     travel_companions: Optional[Literal["один", "пара", "семья", "друзья"]] = None
     budget: Optional[Literal["эконом", "средний", "премиум", "люкс"]] = None
     activities: list[str] = Field(default_factory=list)
     duration_days: Optional[int] = None
     wants_itinerary: Optional[bool] = None
 
-    @field_validator("city", mode="before")
+    @field_validator("city", "origin_city", mode="before")
     @classmethod
     def normalize_city(cls, v: Optional[str]) -> Optional[str]:
         if v is None or not isinstance(v, str):
@@ -53,6 +54,7 @@ class UserPreferences(BaseModel):
         return UserPreferences(
             destination_type=new.destination_type or self.destination_type,
             city=new.city or self.city,
+            origin_city=new.origin_city or self.origin_city,
             travel_companions=new.travel_companions or self.travel_companions,
             budget=new.budget or self.budget,
             activities=list(dict.fromkeys(self.activities + new.activities)),
