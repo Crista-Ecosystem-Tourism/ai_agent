@@ -1,0 +1,6 @@
+venv
+__pycache__
+.git
+*.pyc
+e2e_*.json
+test_*.json
