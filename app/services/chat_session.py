@@ -107,15 +107,15 @@ class ChatSessionService:
             await db.commit()
             return True
 
-    async def list_for_user(self, user_id: str, limit: int = 50) -> list[tuple[str, Optional[str]]]:
+    async def list_for_user(self, user_id: str, limit: int = 50):
         async with self.session_factory() as db:
             rows = (await db.execute(
-                select(ChatSession.id, ChatSession.title)
+                select(ChatSession.id, ChatSession.title, ChatSession.updated_at)
                 .where(ChatSession.user_id == user_id)
                 .order_by(ChatSession.updated_at.desc())
                 .limit(limit)
             )).all()
-            return [(r.id, r.title) for r in rows]
+            return [{"id": r.id, "title": r.title, "updated_at": r.updated_at.isoformat() if r.updated_at else None} for r in rows]
         
     async def load_preferences(self, session_id: str) -> UserPreferences:
         async with self.session_factory() as db:

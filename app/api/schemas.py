@@ -13,6 +13,11 @@ class SessionOut(BaseModel):
 class SessionOutAnon(SessionOut):
     secret: str
 
+class SessionListItem(BaseModel):
+    id: str
+    title: Optional[str] = None
+    updated_at: Optional[str] = None
+
 class MessageIn(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     generate_text_response: bool = False

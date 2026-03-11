@@ -14,7 +14,7 @@ from app.services.chat_session import ChatSessionService
 from app.security.deps import get_current_user, get_optional_user
 
 from app.api.schemas import (
-    SessionCreate, SessionOut, SessionOutAnon,
+    SessionCreate, SessionOut, SessionOutAnon, SessionListItem,
     MessageIn, MessageOut,
     HistoryIn, HistoryOut,
     AttachIn
@@ -29,6 +29,15 @@ from app.dependencies import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+@router.get("/sessions", response_model=list[SessionListItem])
+async def list_sessions(
+    user=Depends(get_current_user),
+    chat_srv: ChatSessionService = Depends(get_chat_session_service),
+):
+    sessions = await chat_srv.list_for_user(user["sub"])
+    return [SessionListItem(**s) for s in sessions]
 
 
 @router.post("/sessions", response_model=Union[SessionOut, SessionOutAnon])
