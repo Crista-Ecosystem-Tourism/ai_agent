@@ -421,8 +421,8 @@ class MessageProcessor:
             response=response,
             has_results=True,
             is_complete=conversation_complete,
-            route_geojson=route_geojson,
-            route_metadata=route_metadata,
+            route_geojson=None,
+            route_metadata=None,
             search_results=structured,
             follow_up_questions=follow_up_questions or None,
         )
