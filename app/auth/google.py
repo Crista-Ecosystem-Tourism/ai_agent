@@ -44,7 +44,7 @@ async def google_callback(
         if not session_state or not state or session_state != state:
             raise HTTPException(
                 status_code=400, 
-                detail="Google auth error: mismatching_state: CSRF Warning! State not equal in request and response."
+                detail="Ошибка авторизации Google: несовпадение состояния сессии (CSRF)"
             )
         
         request.session.pop("oauth_state", None)
@@ -57,7 +57,7 @@ async def google_callback(
         name = userinfo.get("name")
 
         if not email or not sub:
-            raise HTTPException(status_code=400, detail="Google profile missing email/sub")
+            raise HTTPException(status_code=400, detail="Профиль Google не содержит email")
 
         user_id = await user_service.get_or_create_from_google(
             google_sub=sub,
@@ -72,20 +72,20 @@ async def google_callback(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Google auth error: {e}")
+        raise HTTPException(status_code=400, detail=f"Ошибка авторизации Google: {e}")
 
 
 @router.get("/me")
 async def get_current_user(request: Request):
     user = request.session.get("user")
     if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
     return user
 
 @router.post("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return {"message": "Logged out successfully"}
+    return {"message": "Вы вышли из системы"}
 
 # Dev endpoint для тестирования
 @router.get("/dev/token")

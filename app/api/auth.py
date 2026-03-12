@@ -28,7 +28,7 @@ class RegisterIn(BaseModel):
     @classmethod
     def validate_email(cls, v: str) -> str:
         if not EMAIL_RE.match(v):
-            raise ValueError("Invalid email address")
+            raise ValueError("Некорректный адрес электронной почты")
         return v.lower()
 
 
@@ -40,7 +40,7 @@ class LoginIn(BaseModel):
     @classmethod
     def validate_email(cls, v: str) -> str:
         if not EMAIL_RE.match(v):
-            raise ValueError("Invalid email address")
+            raise ValueError("Некорректный адрес электронной почты")
         return v.lower()
 
 
@@ -66,7 +66,7 @@ async def register(
     if existing:
         raise HTTPException(
             status_code=HTTP_409_CONFLICT,
-            detail="A user with this email already exists",
+            detail="Пользователь с таким email уже существует",
         )
 
     hashed = hash_password(payload.password)
@@ -92,19 +92,19 @@ async def login(
     if not user or not user.hashed_password:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Неверный email или пароль",
         )
 
     if not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Неверный email или пароль",
         )
 
     if not user.is_active:
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail="Account is deactivated",
+            detail="Аккаунт деактивирован",
         )
 
     token = create_access_token(sub=user.id, extra={"email": user.email})
@@ -123,7 +123,7 @@ async def me(
     if not user_data:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail="Пользователь не найден",
         )
     return UserOut(
         id=user_data["id"],
