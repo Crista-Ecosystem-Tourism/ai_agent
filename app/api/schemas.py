@@ -73,6 +73,10 @@ class MessageOut(BaseModel):
         None,
         description="Quick reply chips for missing preferences",
     )
+    follow_up_questions: Optional[List[str]] = Field(
+        None,
+        description="Follow-up questions extracted from AI response, displayed as clickable cards",
+    )
 
 class HistoryOut(BaseModel):
     session_id: str

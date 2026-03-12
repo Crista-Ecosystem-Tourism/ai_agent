@@ -196,4 +196,5 @@ async def send_message(
         route_metadata=result.route_metadata,
         itinerary=result.itinerary.model_dump() if result.itinerary else None,
         suggested_replies=result.suggested_replies,
+        follow_up_questions=result.follow_up_questions,
     )

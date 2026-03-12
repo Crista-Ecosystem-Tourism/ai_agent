@@ -24,6 +24,7 @@ class ProcessorResult:
     search_results: Optional[List[SearchResult]] = None
     itinerary: Optional[Any] = None
     suggested_replies: Optional[list] = None
+    follow_up_questions: Optional[List[str]] = None
 
 
 class MessageProcessor:
@@ -443,8 +444,9 @@ class MessageProcessor:
 
         response_agent = Agent(model=self.model)
         result = await response_agent.run(prompt)
-        response = result.output
-        print(f"\nОтвет готов! Разговор завершен: {conversation_complete}")
+        raw_response = result.output
+        response, follow_up_questions = self._extract_questions(raw_response)
+        print(f"\nОтвет готов! Разговор завершен: {conversation_complete}, вопросов: {len(follow_up_questions)}")
 
         return ProcessorResult(
             response=response,
@@ -453,11 +455,42 @@ class MessageProcessor:
             route_geojson=route_geojson,
             route_metadata=route_metadata,
             search_results=structured,
+            follow_up_questions=follow_up_questions or None,
         )
+
+    @staticmethod
+    def _extract_questions(text: str) -> tuple[str, list[str]]:
+        """Extract [Q] tagged questions from AI response text.
+        Returns (clean_text, questions_list)."""
+        questions = []
+        clean_lines = []
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("[Q]"):
+                q = stripped[3:].strip().rstrip("?").strip() + "?"
+                if q != "?":
+                    questions.append(q)
+            else:
+                clean_lines.append(line)
+        clean_text = "\n".join(clean_lines).strip()
+        # Remove trailing empty lines left after extraction
+        while clean_text.endswith("\n\n"):
+            clean_text = clean_text[:-1]
+        return clean_text, questions
 
     def _build_places_prompt(self, deps: TravelDeps, search_results: list) -> str:
         search_context = self._build_search_context(search_results)
         missing = deps.user_preferences.missing_info()
+        questions_instruction = ""
+        if missing:
+            questions_instruction = (
+                f"5. ВАЖНО — УТОЧНЯЮЩИЕ ВОПРОСЫ: задай 1-2 коротких вопроса про: {', '.join(missing)}\n"
+                f"   Каждый вопрос пиши на ОТДЕЛЬНОЙ строке с префиксом [Q].\n"
+                f"   Пример:\n"
+                f"   [Q] Какой у вас примерный бюджет на день?\n"
+                f"   [Q] С кем вы планируете поездку?\n"
+                f"   НЕ включай вопросы в основной текст — только через [Q].\n"
+            )
         return (
             f"На основе результатов поиска составь полезный ответ пользователю.\n"
             f"{search_context}\n"
@@ -467,8 +500,8 @@ class MessageProcessor:
             f"1. Представь найденные места в понятном формате\n"
             f"2. Выбери 5-10 лучших вариантов и опиши каждый\n"
             f"3. Объясни почему эти места подходят пользователю\n"
-            f"4. ВАЖНО: После представления мест задай 1-2 коротких уточняющих вопроса: {', '.join(missing)}\n"
-            f"Будь дружелюбным, конкретным и полезным."
+            f"4. Будь дружелюбным, конкретным и полезным\n"
+            f"{questions_instruction}"
         )
 
     def _build_itinerary_prompt(self, deps: TravelDeps, search_results: list) -> str:
@@ -583,21 +616,28 @@ class MessageProcessor:
         print("\nНедостаточно информации для поиска - задаем вопросы")
 
         suggested_replies = self._build_suggested_replies(deps.user_preferences)
+        missing = deps.user_preferences.missing_info()
 
         follow_up = Agent(model=self.model)
         question = await follow_up.run(
             f"""Пользователь начал разговор о планировании отдыха.
 
             Текущая информация: {deps.user_preferences}
-            Нужно узнать минимум: {', '.join(deps.user_preferences.missing_info())}
+            Нужно узнать минимум: {', '.join(missing)}
 
-            Создай ОДИН короткий, дружелюбный вопрос чтобы узнать базовую информацию.
-            Например: "Куда вы хотите поехать?" или "Какой тип отдыха вас интересует?"
+            Напиши короткий дружелюбный ответ (1-2 предложения).
+            Затем задай 1-2 уточняющих вопроса, каждый на отдельной строке с префиксом [Q].
+            Пример:
+            Отлично, помогу спланировать отдых!
+            [Q] Куда вы хотите поехать?
+            [Q] Какой тип отдыха вас интересует — море, горы, город?
 
-            Будь естественным и не задавай несколько вопросов сразу.
+            Будь естественным.
             """
         )
+        response_text, follow_up_questions = self._extract_questions(question.output)
         return ProcessorResult(
-            response=question.output,
+            response=response_text,
             suggested_replies=suggested_replies,
+            follow_up_questions=follow_up_questions or None,
         )
