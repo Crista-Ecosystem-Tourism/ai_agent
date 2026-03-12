@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
+    itsdangerous \
     pydantic-ai==1.63.0 \
     sqlalchemy==2.0.47 \
     asyncpg==0.31.0 \
