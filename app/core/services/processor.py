@@ -6,7 +6,7 @@ from typing import List, Union, Optional, Any
 
 from pydantic_ai import Agent
 from app.core.services.places import PlacesSearchService
-from app.core.services.route import RouteService, RouteResult
+
 from app.core.models import TravelDeps, SearchQueries, RerankResult, Itinerary, UserPreferences
 from app.api.schemas import SearchResult, Place
 
@@ -212,35 +212,6 @@ class MessageProcessor:
             wants_itinerary = deps.user_preferences.wants_itinerary
             suggested_replies = self._build_suggested_replies(deps.user_preferences)
 
-            # Собираем все Place из результатов поиска для маршрутизации
-            all_places: List[Place] = []
-            for result in search_results:
-                all_places.extend(result['places'])
-
-            # Строим маршрут (graceful degradation — при ошибке route_result=None)
-            route_result = await RouteService.build_route(
-                all_places, deps.http_client
-            )
-
-            route_geojson = None
-            route_metadata = None
-            if route_result is not None:
-                route_geojson = route_result.geojson
-                route_metadata = {
-                    "graph_id": route_result.graph_id,
-                    "build_time_seconds": route_result.build_time_seconds,
-                    "nodes_count": route_result.nodes_count,
-                    "edges_count": route_result.edges_count,
-                    "alternatives_count": route_result.alternatives_count,
-                    "metrics": route_result.metrics,
-                }
-                logger.info(
-                    "Маршрут построен: %d узлов, %d рёбер, %.2f сек",
-                    route_result.nodes_count,
-                    route_result.edges_count,
-                    route_result.build_time_seconds,
-                )
-
             # When wants_itinerary=True and all prefs are filled — generate itinerary immediately
             if wants_itinerary and conversation_complete:
                 structured_results = [
@@ -262,8 +233,8 @@ class MessageProcessor:
                     response=summary,
                     has_results=True,
                     is_complete=True,
-                    route_geojson=route_geojson,
-                    route_metadata=route_metadata,
+                    route_geojson=None,
+                    route_metadata=None,
                     search_results=structured_results,
                     itinerary=itinerary,
                     suggested_replies=None,
@@ -271,7 +242,7 @@ class MessageProcessor:
 
             if generate_search_response:
                 result = await self._generate_search_response(
-                    deps, search_results, route_geojson, route_metadata
+                    deps, search_results
                 )
                 result.suggested_replies = suggested_replies
                 return result
@@ -297,8 +268,8 @@ class MessageProcessor:
                     response=structured_results,
                     has_results=True,
                     is_complete=conversation_complete,
-                    route_geojson=route_geojson,
-                    route_metadata=route_metadata,
+                    route_geojson=None,
+                    route_metadata=None,
                     itinerary=itinerary,
                     suggested_replies=suggested_replies,
                 )
@@ -402,8 +373,6 @@ class MessageProcessor:
         self,
         deps: TravelDeps,
         search_results: list,
-        route_geojson: Optional[dict] = None,
-        route_metadata: Optional[dict] = None,
     ) -> ProcessorResult:
         conversation_complete = deps.user_preferences.is_complete()
 
@@ -431,8 +400,8 @@ class MessageProcessor:
                     response=summary_text,
                     has_results=True,
                     is_complete=True,
-                    route_geojson=route_geojson,
-                    route_metadata=route_metadata,
+                    route_geojson=None,
+                    route_metadata=None,
                     search_results=structured,
                     itinerary=itinerary,
                 )
