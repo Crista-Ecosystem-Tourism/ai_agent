@@ -26,6 +26,10 @@ class ChatSession(Base, TimestampMixin):
     session_secret_hash: Mapped[Optional[bytes]] = mapped_column(BYTEA, nullable=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    place_ratings: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, default=None)
+    places_snapshot: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True, default=None)
+    graph_geojson: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, default=None)
+
     __table_args__ = (
         Index("idx_chat_session_user_updated", "user_id", "updated_at"),
         Index("idx_chat_session_expires", "expires_at"),

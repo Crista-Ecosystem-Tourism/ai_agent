@@ -135,6 +135,60 @@ class ChatSessionService:
             )
             await db.commit()
 
+    async def save_place_ratings(self, session_id: str, ratings: dict) -> None:
+        async with self.session_factory() as db:
+            await db.execute(
+                update(ChatSession)
+                .where(ChatSession.id == session_id)
+                .values(place_ratings=ratings)
+            )
+            await db.commit()
+
+    async def load_place_ratings(self, session_id: str) -> Optional[dict]:
+        async with self.session_factory() as db:
+            return (await db.execute(
+                select(ChatSession.place_ratings).where(ChatSession.id == session_id)
+            )).scalar_one_or_none()
+
+    async def save_places_snapshot(self, session_id: str, places: list) -> None:
+        async with self.session_factory() as db:
+            await db.execute(
+                update(ChatSession)
+                .where(ChatSession.id == session_id)
+                .values(places_snapshot=places)
+            )
+            await db.commit()
+
+    async def load_places_snapshot(self, session_id: str) -> Optional[list]:
+        async with self.session_factory() as db:
+            return (await db.execute(
+                select(ChatSession.places_snapshot).where(ChatSession.id == session_id)
+            )).scalar_one_or_none()
+
+    async def save_graph_geojson(self, session_id: str, geojson: dict) -> None:
+        async with self.session_factory() as db:
+            await db.execute(
+                update(ChatSession)
+                .where(ChatSession.id == session_id)
+                .values(graph_geojson=geojson)
+            )
+            await db.commit()
+
+    async def load_graph_geojson(self, session_id: str) -> Optional[dict]:
+        async with self.session_factory() as db:
+            return (await db.execute(
+                select(ChatSession.graph_geojson).where(ChatSession.id == session_id)
+            )).scalar_one_or_none()
+
+    async def update_title(self, session_id: str, title: str) -> None:
+        async with self.session_factory() as db:
+            await db.execute(
+                update(ChatSession)
+                .where(ChatSession.id == session_id)
+                .values(title=title)
+            )
+            await db.commit()
+
     async def touch(self, session_id: str):
         async with self.session_factory() as db:
             now = datetime.now(timezone.utc)

@@ -10,6 +10,7 @@ from app.core.memory.services import ConversationHistoryService, HistoryPolicy
 from app.core.memory.config import HistoryConfig
 from app.services.chat_session import ChatSessionService
 from app.services.user import UserService
+from app.services.saved_route import SavedRouteService
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -25,6 +26,7 @@ _http_client: httpx.AsyncClient | None = None
 _history_service: ConversationHistoryService | None = None
 _chat_session_service: ChatSessionService | None = None
 _user_service: UserService | None = None
+_saved_route_service: SavedRouteService | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -34,7 +36,7 @@ _message_processor: MessageProcessor | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
-    global _history_service, _chat_session_service, _user_service
+    global _history_service, _chat_session_service, _user_service, _saved_route_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
 
     dsn = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
@@ -52,6 +54,7 @@ async def lifespan(app: FastAPI):
 
     _chat_session_service = ChatSessionService(_session_factory)
     _user_service = UserService(_session_factory)
+    _saved_route_service = SavedRouteService(_session_factory)
 
     _llm_model = OpenAIChatModel(
         os.getenv("OPENROUTER_MODEL", "openai/gpt-4o"),
@@ -92,6 +95,9 @@ def get_chat_session_service() -> ChatSessionService:
 
 def get_user_service() -> UserService:
     return _user_service
+
+def get_saved_route_service() -> SavedRouteService:
+    return _saved_route_service
 
 def get_message_processor() -> MessageProcessor:
     return _message_processor

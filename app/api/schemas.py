@@ -81,3 +81,56 @@ class MessageOut(BaseModel):
 class HistoryOut(BaseModel):
     session_id: str
     messages: list
+
+
+# --- Travel data persistence schemas ---
+
+class PlaceRatingEntry(BaseModel):
+    rating: Optional[float] = None
+    score: Optional[float] = None
+    selected: bool = False
+
+class PlaceRatingsIn(BaseModel):
+    ratings: dict[str, PlaceRatingEntry]
+
+class PlaceRatingsOut(BaseModel):
+    session_id: str
+    ratings: Optional[dict[str, PlaceRatingEntry]] = None
+
+class PlacesSnapshotIn(BaseModel):
+    places: list[dict]
+
+class PlacesSnapshotOut(BaseModel):
+    session_id: str
+    places: Optional[list[dict]] = None
+
+class GraphIn(BaseModel):
+    geojson: dict
+
+class GraphOut(BaseModel):
+    session_id: str
+    geojson: Optional[dict] = None
+
+class SavedRouteCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    destination: str = Field(..., min_length=1, max_length=200)
+    session_id: Optional[str] = None
+    places: list[dict] = Field(...)
+    graph_geojson: Optional[dict] = None
+
+class SavedRouteOut(BaseModel):
+    id: str
+    name: str
+    destination: str
+    session_id: Optional[str] = None
+    places: list[dict]
+    graph_geojson: Optional[dict] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+class SavedRouteListItem(BaseModel):
+    id: str
+    name: str
+    destination: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None

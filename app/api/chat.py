@@ -65,6 +65,22 @@ async def get_session(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Session not found")
     return SessionOut(id=row[0], title=row[1])
 
+@router.patch("/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    payload: SessionCreate,
+    user=Depends(get_optional_user),
+    chat_srv: ChatSessionService = Depends(get_chat_session_service),
+):
+    owner = await chat_srv.get_owner(session_id)
+    if owner:
+        if not user or user["sub"] != owner:
+            raise HTTPException(status_code=403, detail="Forbidden")
+    if payload.title:
+        await chat_srv.update_title(session_id, payload.title)
+    return {"ok": True}
+
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: str,

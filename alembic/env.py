@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 load_dotenv()
 
 from app.db.models.base import Base
-from app.db.models import chat, auth
+from app.db.models import chat, auth, saved_route
 
 config = context.config
 
