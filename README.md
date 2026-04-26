@@ -16,7 +16,7 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
 ```
 
-Нужен **`.env`**: `OPENROUTER_API_KEY`, `DATABASE_URL`, `RAG_URL`, `ROUTE_URL`, `CORS_ORIGINS` — примеры в [главной документации](https://raw.githubusercontent.com/Crista-Ecosystem-Tourism/crs/main/README.md) (см. репо **crs**).
+Нужен **`.env`**: см. **`.env.example`** в этом репо; для полного стека — [репо **crs**](https://github.com/Crista-Ecosystem-Tourism/crs).
 
 ## CI/CD
 

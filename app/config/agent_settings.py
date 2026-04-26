@@ -8,7 +8,7 @@ load_dotenv()
 
 LLM_CONFIG = {
     "provider": os.getenv("LLM_PROVIDER", "openrouter"),
-    "model": os.getenv("OPENROUTER_MODEL", "openai/gpt-4o"),
+    "model": os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat-v3-0324"),
     "ollama_base_url": "http://localhost:11434/v1"
 }
 

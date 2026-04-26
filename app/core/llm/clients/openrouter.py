@@ -8,7 +8,7 @@ from app.core.llm.exceptions import ConfigurationError
 
 
 class OpenRouterClient(BaseLLMClient):
-    def __init__(self, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, model: str = "deepseek/deepseek-chat-v3-0324"):
         load_dotenv()
         api_key = os.getenv("OPENROUTER_API_KEY")
         

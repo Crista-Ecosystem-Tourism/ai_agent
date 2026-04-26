@@ -57,7 +57,8 @@ async def lifespan(app: FastAPI):
     _saved_route_service = SavedRouteService(_session_factory)
 
     _llm_model = OpenAIChatModel(
-        os.getenv("OPENROUTER_MODEL", "openai/gpt-4o"),
+        # Дефолт: DeepSeek V3 (не OpenAI) — для регионов вроде HK OpenRouter часто блокирует openai/* по ToS/geo.
+        os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat-v3-0324"),
         provider=OpenRouterProvider(api_key=os.getenv("OPENROUTER_API_KEY"))
     )
     _preferences_agent = PreferencesAgent(_llm_model)
