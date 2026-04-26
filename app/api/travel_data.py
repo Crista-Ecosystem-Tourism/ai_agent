@@ -1,6 +1,7 @@
 import logging
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.services.chat_session import ChatSessionService
@@ -23,6 +24,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["travel-data"])
 
 
+async def _ensure_travel_session_access(
+    session_id: str,
+    user,
+    session_secret: Optional[str],
+    chat_srv: ChatSessionService,
+) -> None:
+    """Как в chat: владелец по JWT или анонимная сессия с верным секретом."""
+    owner = await chat_srv.get_owner(session_id)
+    if owner:
+        if not user or user["sub"] != owner:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return
+    ok = await chat_srv.verify_anonymous_access(session_id, session_secret)
+    if not ok:
+        raise HTTPException(status_code=403, detail="Forbidden (anon secret invalid)")
+
+
 # --- Place ratings ---
 
 @router.put("/chat/sessions/{session_id}/place-ratings")
@@ -32,13 +50,9 @@ async def save_place_ratings(
     user=Depends(get_optional_user),
     chat_srv: ChatSessionService = Depends(get_chat_session_service),
 ):
-    owner = await chat_srv.get_owner(session_id)
-    if owner:
-        if not user or user["sub"] != owner:
-            raise HTTPException(status_code=403, detail="Forbidden")
-    else:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Session not found")
-
+    await _ensure_travel_session_access(
+        session_id, user, payload.session_secret, chat_srv
+    )
     ratings_dict = {k: v.model_dump() for k, v in payload.ratings.items()}
     await chat_srv.save_place_ratings(session_id, ratings_dict)
     return {"ok": True}
@@ -49,14 +63,9 @@ async def load_place_ratings(
     session_id: str,
     user=Depends(get_optional_user),
     chat_srv: ChatSessionService = Depends(get_chat_session_service),
+    session_secret: Optional[str] = Query(None),
 ):
-    owner = await chat_srv.get_owner(session_id)
-    if owner:
-        if not user or user["sub"] != owner:
-            raise HTTPException(status_code=403, detail="Forbidden")
-    else:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Session not found")
-
+    await _ensure_travel_session_access(session_id, user, session_secret, chat_srv)
     ratings = await chat_srv.load_place_ratings(session_id)
     return PlaceRatingsOut(session_id=session_id, ratings=ratings)
 
@@ -70,13 +79,9 @@ async def save_places_snapshot(
     user=Depends(get_optional_user),
     chat_srv: ChatSessionService = Depends(get_chat_session_service),
 ):
-    owner = await chat_srv.get_owner(session_id)
-    if owner:
-        if not user or user["sub"] != owner:
-            raise HTTPException(status_code=403, detail="Forbidden")
-    else:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Session not found")
-
+    await _ensure_travel_session_access(
+        session_id, user, payload.session_secret, chat_srv
+    )
     await chat_srv.save_places_snapshot(session_id, payload.places)
     return {"ok": True}
 
@@ -86,14 +91,9 @@ async def load_places_snapshot(
     session_id: str,
     user=Depends(get_optional_user),
     chat_srv: ChatSessionService = Depends(get_chat_session_service),
+    session_secret: Optional[str] = Query(None),
 ):
-    owner = await chat_srv.get_owner(session_id)
-    if owner:
-        if not user or user["sub"] != owner:
-            raise HTTPException(status_code=403, detail="Forbidden")
-    else:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Session not found")
-
+    await _ensure_travel_session_access(session_id, user, session_secret, chat_srv)
     places = await chat_srv.load_places_snapshot(session_id)
     return PlacesSnapshotOut(session_id=session_id, places=places)
 
@@ -107,13 +107,9 @@ async def save_graph(
     user=Depends(get_optional_user),
     chat_srv: ChatSessionService = Depends(get_chat_session_service),
 ):
-    owner = await chat_srv.get_owner(session_id)
-    if owner:
-        if not user or user["sub"] != owner:
-            raise HTTPException(status_code=403, detail="Forbidden")
-    else:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Session not found")
-
+    await _ensure_travel_session_access(
+        session_id, user, payload.session_secret, chat_srv
+    )
     await chat_srv.save_graph_geojson(session_id, payload.geojson)
     return {"ok": True}
 
@@ -123,14 +119,9 @@ async def load_graph(
     session_id: str,
     user=Depends(get_optional_user),
     chat_srv: ChatSessionService = Depends(get_chat_session_service),
+    session_secret: Optional[str] = Query(None),
 ):
-    owner = await chat_srv.get_owner(session_id)
-    if owner:
-        if not user or user["sub"] != owner:
-            raise HTTPException(status_code=403, detail="Forbidden")
-    else:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Session not found")
-
+    await _ensure_travel_session_access(session_id, user, session_secret, chat_srv)
     geojson = await chat_srv.load_graph_geojson(session_id)
     return GraphOut(session_id=session_id, geojson=geojson)
 

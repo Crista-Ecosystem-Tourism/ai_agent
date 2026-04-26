@@ -92,6 +92,7 @@ class PlaceRatingEntry(BaseModel):
 
 class PlaceRatingsIn(BaseModel):
     ratings: dict[str, PlaceRatingEntry]
+    session_secret: Optional[str] = Field(None, description="Секрет анонимной сессии (если user_id ещё не привязан)")
 
 class PlaceRatingsOut(BaseModel):
     session_id: str
@@ -99,6 +100,7 @@ class PlaceRatingsOut(BaseModel):
 
 class PlacesSnapshotIn(BaseModel):
     places: list[dict]
+    session_secret: Optional[str] = Field(None, description="Секрет анонимной сессии")
 
 class PlacesSnapshotOut(BaseModel):
     session_id: str
@@ -106,6 +108,7 @@ class PlacesSnapshotOut(BaseModel):
 
 class GraphIn(BaseModel):
     geojson: dict
+    session_secret: Optional[str] = Field(None, description="Секрет анонимной сессии")
 
 class GraphOut(BaseModel):
     session_id: str

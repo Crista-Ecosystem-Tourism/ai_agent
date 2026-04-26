@@ -120,13 +120,13 @@ async def get_history(
 @router.post("/sessions/{session_id}/attach")
 async def attach_session(
     session_id: str,
-    session_secret: AttachIn,
+    payload: AttachIn,
     user=Depends(get_optional_user),
     chat_srv: ChatSessionService = Depends(get_chat_session_service),
 ):
     if not user:
         raise HTTPException(status_code=401, detail="Login required to attach")
-    ok = await chat_srv.verify_anonymous_access(session_id, session_secret)
+    ok = await chat_srv.verify_anonymous_access(session_id, payload.session_secret)
     if not ok:
         raise HTTPException(status_code=403, detail="Forbidden (anon secret invalid)")
     await chat_srv.attach_owner(session_id, user["sub"])
