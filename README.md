@@ -1,41 +1,27 @@
-# Crista Agent
+# Crista — AI Agent
 
-AI чат-бот для планирования путешествий. Извлекает предпочтения пользователя, ищет места через RAG (vectorization backend), строит маршруты.
+Backend чата: **FastAPI**, **pydantic-ai**, **OpenRouter**, RAG (vectorization), маршруты (placesweb), **PostgreSQL**, **Alembic**, JWT.
 
-## Зависимости
+## Роль
 
-- Python 3.13+
-- PostgreSQL на порту 5544 (Docker-контейнер `user-service-postgres`)
-- Vectorization Backend на порту 8001
-- PlacesWeb Backend на порту 8003
-- Ключ OpenRouter API
+Сессии чата, LLM, вызовы RAG/графа, регистрация/логин. Внутри Docker `RAG_URL` / `ROUTE_URL` — **имена** **сервисов** `vectorization`, `placesweb`.
 
-## Запуск
+## Локально
 
 ```bash
-source venv/Scripts/activate          # Windows: .\venv\Scripts\activate
+cd ai_agent
+python -m venv venv && source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-alembic upgrade head                  # миграции БД (первый запуск)
+alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
 ```
 
-## Конфигурация (.env)
+Нужен **`.env`**: `OPENROUTER_API_KEY`, `DATABASE_URL`, `RAG_URL`, `ROUTE_URL`, `CORS_ORIGINS` — примеры в [главной документации](https://raw.githubusercontent.com/Crista-Ecosystem-Tourism/crs/main/README.md) (см. репо **crs**).
 
-```
-CORS_ORIGINS=http://localhost:5173,http://localhost:3333
-RAG_URL=http://localhost:8001
-ROUTE_URL=http://localhost:8003
-OPENROUTER_API_KEY=sk-or-v1-...
-DATABASE_URL=postgresql+asyncpg://postgres:postgres123@localhost:5544/crs_agent
-NO_PROXY=localhost,127.0.0.1
-HTTP_PROXY=
-HTTPS_PROXY=
-```
+## CI/CD
 
-## API
+Синк в [crs/ai_agent](https://github.com/Crista-Ecosystem-Tourism/crs): [инструкция](https://github.com/Crista-Ecosystem-Tourism/crs/blob/main/docs/CI-CD-SYNC.md), секрет `CRS_SYNC_PAT`.
 
-- `GET /health` — health check
-- `POST /chat/sessions` — создание сессии чата
-- `POST /chat/sessions/{id}/messages` — отправка сообщения
-- `GET /chat/sessions/{id}/history` — история диалога
-- `DELETE /chat/sessions/{id}` — удаление сессии
+## Полная документация
+
+[README `crs`](https://github.com/Crista-Ecosystem-Tourism/crs#readme) · [орг](https://github.com/Crista-Ecosystem-Tourism)

@@ -1,22 +1,19 @@
+# syntax=docker/dockerfile:1.6
 FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential libpq-dev \
+ && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    itsdangerous \
-    pydantic-ai==1.63.0 \
-    sqlalchemy==2.0.47 \
-    asyncpg==0.31.0 \
-    alembic==1.18.4 \
-    httpx==0.28.1 \
-    PyJWT==2.11.0 \
-    bcrypt==5.0.0 \
-    pydantic-settings==2.13.1
+COPY requirements.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 COPY . .
 
