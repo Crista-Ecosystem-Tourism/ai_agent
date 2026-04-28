@@ -27,10 +27,24 @@ app.add_middleware(
     https_only=False,  # В production поставьте True
 )
 
-origins = (os.getenv("CORS_ORIGINS") or "").split(",")
+# Пустой CORS_ORIGINS на проде ломает вход с фронта (браузер блокирует ответ без Allow-Origin).
+_default_cors = (
+    "http://localhost:5173,http://localhost:3333,http://127.0.0.1:5173,"
+    "https://crista.online,https://www.crista.online"
+)
+_raw = (os.getenv("CORS_ORIGINS") or "").strip()
+_cors_src = _raw if _raw else _default_cors
+_seen: set[str] = set()
+origins = []
+for _o in _cors_src.split(","):
+    u = _o.strip()
+    if u and u not in _seen:
+        _seen.add(u)
+        origins.append(u)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in origins if o.strip()],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
