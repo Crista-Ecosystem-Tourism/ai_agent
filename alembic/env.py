@@ -13,13 +13,14 @@ load_dotenv()
 
 from app.db.models.base import Base
 from app.db.models import chat, auth, saved_route
+from app.db.dsn import get_database_url
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
+config.set_main_option("sqlalchemy.url", get_database_url())
 
 target_metadata = Base.metadata
 

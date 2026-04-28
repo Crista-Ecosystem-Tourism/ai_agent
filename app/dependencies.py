@@ -17,6 +17,7 @@ from pydantic_ai.providers.openrouter import OpenRouterProvider
 from app.core.agents.preferences import PreferencesAgent
 from app.core.agents.search import SearchAgent
 from app.core.services.processor import MessageProcessor
+from app.db.dsn import get_database_url
 
 
 _engine = None
@@ -39,7 +40,7 @@ async def lifespan(app: FastAPI):
     global _history_service, _chat_session_service, _user_service, _saved_route_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
 
-    dsn = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
+    dsn = get_database_url()
     _engine = create_async_engine(dsn, pool_pre_ping=True, future=True)
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
 
