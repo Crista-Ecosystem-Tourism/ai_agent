@@ -11,7 +11,6 @@ from app.core.memory.config import HistoryConfig
 from app.services.chat_session import ChatSessionService
 from app.services.user import UserService
 from app.services.saved_route import SavedRouteService
-from app.services.suitcase import SuitcaseService
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -29,7 +28,6 @@ _history_service: ConversationHistoryService | None = None
 _chat_session_service: ChatSessionService | None = None
 _user_service: UserService | None = None
 _saved_route_service: SavedRouteService | None = None
-_suitcase_service: SuitcaseService | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -39,7 +37,7 @@ _message_processor: MessageProcessor | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
-    global _history_service, _chat_session_service, _user_service, _saved_route_service, _suitcase_service
+    global _history_service, _chat_session_service, _user_service, _saved_route_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
 
     dsn = get_database_url()
@@ -58,7 +56,6 @@ async def lifespan(app: FastAPI):
     _chat_session_service = ChatSessionService(_session_factory)
     _user_service = UserService(_session_factory)
     _saved_route_service = SavedRouteService(_session_factory)
-    _suitcase_service = SuitcaseService(_session_factory)
 
     _llm_model = OpenAIChatModel(
         # Дефолт: DeepSeek V3 (не OpenAI) — для регионов вроде HK OpenRouter часто блокирует openai/* по ToS/geo.
@@ -103,9 +100,6 @@ def get_user_service() -> UserService:
 
 def get_saved_route_service() -> SavedRouteService:
     return _saved_route_service
-
-def get_suitcase_service() -> SuitcaseService:
-    return _suitcase_service
 
 def get_message_processor() -> MessageProcessor:
     return _message_processor
