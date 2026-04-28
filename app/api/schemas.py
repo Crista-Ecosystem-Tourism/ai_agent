@@ -137,3 +137,105 @@ class SavedRouteListItem(BaseModel):
     destination: str
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+# --- Suitcase (Мой чемодан) ---
+
+class SuitcaseTripCreate(BaseModel):
+    country: str = Field(..., min_length=1, max_length=200)
+    city: str = Field(..., min_length=1, max_length=200)
+    start_date: str = Field(..., min_length=8, max_length=32)
+    end_date: str = Field(..., min_length=8, max_length=32)
+    image: Optional[str] = Field(None, max_length=1024)
+    mood: Optional[str] = Field(None, max_length=100)
+    route_json: Optional[str] = None
+    impressions: Optional[str] = None
+    photos: Optional[list] = None
+    is_archived: bool = False
+
+
+class SuitcaseTripPatch(BaseModel):
+    country: Optional[str] = Field(None, max_length=200)
+    city: Optional[str] = Field(None, max_length=200)
+    start_date: Optional[str] = Field(None, max_length=32)
+    end_date: Optional[str] = Field(None, max_length=32)
+    image: Optional[str] = Field(None, max_length=1024)
+    mood: Optional[str] = Field(None, max_length=100)
+    route_json: Optional[str] = None
+    impressions: Optional[str] = None
+    photos: Optional[list] = None
+    is_archived: Optional[bool] = None
+
+
+class SuitcaseTripOut(BaseModel):
+    id: str
+    country: str
+    city: str
+    start_date: str
+    end_date: str
+    image: Optional[str] = None
+    mood: Optional[str] = None
+    route_json: Optional[str] = None
+    impressions: Optional[str] = None
+    photos: Optional[list] = None
+    is_archived: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class SuitcaseExpenseCreate(BaseModel):
+    amount: float = Field(..., ge=0)
+    category: str = Field(..., min_length=1, max_length=64)
+    title: str = Field(..., min_length=1, max_length=500)
+    date: str = Field(..., min_length=8, max_length=32)
+    currency: Optional[str] = Field(None, max_length=8)
+
+
+class SuitcaseExpensePatch(BaseModel):
+    amount: Optional[float] = Field(None, ge=0)
+    category: Optional[str] = Field(None, max_length=64)
+    title: Optional[str] = Field(None, max_length=500)
+    date: Optional[str] = Field(None, max_length=32)
+    currency: Optional[str] = Field(None, max_length=8)
+
+
+class SuitcaseExpenseOut(BaseModel):
+    id: str
+    trip_id: str
+    amount: float
+    category: str
+    title: str
+    date: str
+    currency: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class SuitcaseGoalCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=300)
+    current: int = Field(0, ge=0)
+    total: int = Field(..., ge=1)
+    color: str = Field("#007AFF", max_length=32)
+
+
+class SuitcaseGoalPatch(BaseModel):
+    title: Optional[str] = Field(None, max_length=300)
+    current: Optional[int] = Field(None, ge=0)
+    total: Optional[int] = Field(None, ge=1)
+    color: Optional[str] = Field(None, max_length=32)
+
+
+class SuitcaseGoalOut(BaseModel):
+    id: str
+    title: str
+    current: int
+    total: int
+    color: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class SuitcaseWorkspaceOut(BaseModel):
+    trips: list[SuitcaseTripOut]
+    expenses: list[SuitcaseExpenseOut]
+    goals: list[SuitcaseGoalOut]
