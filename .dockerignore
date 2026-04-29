@@ -18,6 +18,8 @@ htmlcov
 .idea
 .vscode
 .DS_Store
+._*
+**/._*
 Dockerfile
 docker-compose*.yml
 README*.md
