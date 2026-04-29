@@ -45,11 +45,6 @@ RUN chmod +x /docker-entrypoint.sh
 
 COPY . .
 
-# macOS копирует на диск служебные `._*` (AppleDouble). Они попадают в `alembic/versions/`
-# с расширением `.py` — Alembic пытается exec_module и падает с "null bytes".
-RUN find /app/alembic -name '._*' -type f -delete 2>/dev/null || true \
- && find /app -maxdepth 2 -name '._*' -type f -delete 2>/dev/null || true
-
 EXPOSE 8002
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

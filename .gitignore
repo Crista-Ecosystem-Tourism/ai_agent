@@ -13,11 +13,6 @@ venv/
 
 alembic/versions/*.pyc
 
-# macOS: AppleDouble (._*) — Alembic может пытаться загрузить как Python-миграции
-**/._*
-.DS_Store
-**/.DS_Store
-
 # Debug/test artifacts
 e2e_*.json
 test_request.json
