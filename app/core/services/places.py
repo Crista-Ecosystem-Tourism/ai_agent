@@ -21,13 +21,15 @@ class PlacesSearchService:
                 k=top_k
                 top_k *= 2
 
+            # Город в тексте запроса: генератор запросов намеренно не включает city в строку.
+            # metadata_filter по city не используем — в Chroma у многих документов city пустой,
+            # из‑за чего Chroma отдаёт 0 результатов при {"city": "Москва"}.
+            query_text = f"{query} {city}".strip() if city else query
             data = {
-                "query": query,
+                "query": query_text,
                 "top_k": top_k,
                 "distance_threshold": RAG_CONFIG["distance_threshold"],
             }
-            if city:
-                data["metadata_filter"] = {"city": city}
             
             response = await deps.http_client.post(
                 search_url,
@@ -42,12 +44,12 @@ class PlacesSearchService:
                 results = results[:k]
 
             if page_content:
-                results = []
+                contents: list[str] = []
                 for result in results:
                     content = result.get("data", {}).get("page_content", "")
                     if content:
-                        results.append(content)
-                return results
+                        contents.append(content)
+                return contents
             
             places = []
             for result in results:
