@@ -18,4 +18,5 @@ jobs:
     permissions:
       security-events: write
       contents: read
+      actions: read
     uses: Crista-Ecosystem-Tourism/crs/.github/workflows/reusable-security-scan.yml@main
