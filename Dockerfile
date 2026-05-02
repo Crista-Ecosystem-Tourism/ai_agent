@@ -45,6 +45,10 @@ RUN chmod +x /docker-entrypoint.sh
 
 COPY . .
 
+RUN adduser --disabled-password --no-create-home --gecos "" appuser \
+ && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8002
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
