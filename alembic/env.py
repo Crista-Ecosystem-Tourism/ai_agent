@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 load_dotenv()
 
 from app.db.models.base import Base
-from app.db.models import chat, auth, saved_route, suitcase
+from app.db.models import chat, auth, game, saved_route
 from app.db.dsn import get_database_url
 
 config = context.config
@@ -25,6 +25,11 @@ config.set_main_option("sqlalchemy.url", _db_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
+# PostgreSQL is shared with other bounded services.  Each service keeps an
+# independent Alembic state table so one migration chain cannot overwrite the
+# revision of another.
+VERSION_TABLE = "ai_agent_alembic_version"
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
@@ -33,13 +38,18 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table=VERSION_TABLE,
     )
 
     with context.begin_transaction():
         context.run_migrations()
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table=VERSION_TABLE,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

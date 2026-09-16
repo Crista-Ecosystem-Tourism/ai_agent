@@ -2,13 +2,15 @@ import logging
 import os
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.dependencies import lifespan
+from app.dependencies import get_runtime_status, lifespan
 from app.api.chat import router as chat_router
 from app.api.auth import router as auth_router
 from app.api.travel_data import router as travel_data_router
+from app.api.game import router as game_router
 
 
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -53,11 +55,19 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(auth_router)
 app.include_router(travel_data_router)
+app.include_router(game_router)
 
 @app.get("/health")
 def health():
-    # deploy cache test
-    return {"ok": True}
+    """Liveness: процесс запущен; AI доступность сообщается отдельно."""
+    return {"ok": True, **get_runtime_status()}
+
+
+@app.get("/ready")
+def ready():
+    """Readiness for core API dependencies; AI is optional for this service."""
+    status = get_runtime_status()
+    return JSONResponse(status_code=200 if status["core_ready"] else 503, content=status)
 
 @app.get("/")
 def root():

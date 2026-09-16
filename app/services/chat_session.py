@@ -63,26 +63,67 @@ class ChatSessionService:
             )).scalar_one_or_none()
 
     async def verify_anonymous_access(self, session_id: str, provided_secret: Optional[str]) -> bool:
+        """Validate access to an active anonymous session only.
+
+        Callers must check the authenticated owner separately. Returning ``True``
+        for an already claimed session would turn its old anonymous ID into a
+        bearer capability and would allow ownership to be reassigned.
+        """
         async with self.session_factory() as db:
             row = (await db.execute(
-                select(ChatSession.is_anonymous, ChatSession.session_secret_hash)
+                select(
+                    ChatSession.is_anonymous,
+                    ChatSession.session_secret_hash,
+                    ChatSession.expires_at,
+                )
                 .where(ChatSession.id == session_id)
             )).first()
             if not row:
                 return False
-            is_anonymous, secret_hash = row
-            if not is_anonymous:
-                return True
-            return verify_secret(secret_hash, provided_secret or "")
+            is_anonymous, secret_hash, expires_at = row
+            if not is_anonymous or expires_at is None or expires_at <= datetime.now(timezone.utc):
+                return False
+            return verify_secret(secret_hash, provided_secret)
 
-    
-    async def attach_owner(self, session_id: str, user_id: str) -> bool:
+    async def claim_anonymous_session(
+        self,
+        session_id: str,
+        user_id: str,
+        provided_secret: str,
+    ) -> bool:
+        """Atomically transfer an active anonymous session to its first owner.
+
+        The secret is checked before the conditional update, and its stored hash
+        participates in that update. A second concurrent claimant therefore sees
+        zero updated rows instead of taking over the already claimed chat.
+        """
+        now = datetime.now(timezone.utc)
         async with self.session_factory() as db:
-            await db.execute(
+            row = (await db.execute(
+                select(ChatSession.session_secret_hash)
+                .where(
+                    ChatSession.id == session_id,
+                    ChatSession.is_anonymous.is_(True),
+                    ChatSession.expires_at > now,
+                )
+            )).first()
+            if not row or not verify_secret(row[0], provided_secret):
+                return False
+
+            result = await db.execute(
                 update(ChatSession)
-                .where(ChatSession.id == session_id)
+                .where(
+                    ChatSession.id == session_id,
+                    ChatSession.is_anonymous.is_(True),
+                    ChatSession.user_id.is_(None),
+                    ChatSession.expires_at > now,
+                    ChatSession.session_secret_hash == row[0],
+                )
                 .values(user_id=user_id, is_anonymous=False, session_secret_hash=None)
             )
+            if result.rowcount != 1:
+                await db.rollback()
+                return False
             await db.commit()
             return True
         

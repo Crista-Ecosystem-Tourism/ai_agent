@@ -76,6 +76,10 @@ async def update_session(
     if owner:
         if not user or user["sub"] != owner:
             raise HTTPException(status_code=403, detail="Forbidden")
+    else:
+        ok = await chat_srv.verify_anonymous_access(session_id, payload.session_secret)
+        if not ok:
+            raise HTTPException(status_code=403, detail="Forbidden (anon secret invalid)")
     if payload.title:
         await chat_srv.update_title(session_id, payload.title)
     return {"ok": True}
@@ -126,10 +130,13 @@ async def attach_session(
 ):
     if not user:
         raise HTTPException(status_code=401, detail="Login required to attach")
-    ok = await chat_srv.verify_anonymous_access(session_id, payload.session_secret)
+    ok = await chat_srv.claim_anonymous_session(
+        session_id,
+        user["sub"],
+        payload.session_secret,
+    )
     if not ok:
-        raise HTTPException(status_code=403, detail="Forbidden (anon secret invalid)")
-    await chat_srv.attach_owner(session_id, user["sub"])
+        raise HTTPException(status_code=403, detail="Anonymous session is unavailable or already claimed")
     return {"ok": True}
 
 

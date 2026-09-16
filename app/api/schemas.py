@@ -5,6 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class SessionCreate(BaseModel):
     title: Optional[str] = None
     anonymous: bool = Field(default=False, description="Создать анонимную сессию с секретом")
+    session_secret: Optional[str] = Field(
+        None,
+        description="Секрет активной анонимной сессии для её изменения",
+    )
 
 class SessionOut(BaseModel):
     id: str

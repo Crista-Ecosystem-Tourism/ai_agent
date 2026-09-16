@@ -5,6 +5,7 @@ set -eu
 # Если в Coolify/Docker задан только command с uvicorn, он подставится как "$@"
 # и выполнится после upgrade (ENTRYPOINT не затирается при смене CMD).
 echo "[docker-entrypoint] alembic upgrade head..."
+python -m app.db.migrate
 alembic upgrade head
 echo "[docker-entrypoint] starting: $*"
 exec "$@"
