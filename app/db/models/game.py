@@ -28,6 +28,8 @@ class GameProfile(Base, TimestampMixin):
     xp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     energy: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     energy_refreshed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    streak: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_activity_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class GameCountry(Base, TimestampMixin):
@@ -128,3 +130,30 @@ class GameStamp(Base):
         UniqueConstraint("user_id", "stamp_key", name="uq_game_stamp_user_key"),
         Index("idx_game_stamp_user_earned", "user_id", "earned_at"),
     )
+
+
+class GameRewardLedger(Base):
+    """Immutable XP receipt. A unique reward key makes retries harmless."""
+
+    __tablename__ = "game_reward_ledger"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    quest_id: Mapped[str] = mapped_column(ForeignKey("game_quest.id"), nullable=False)
+    reward_key: Mapped[str] = mapped_column(String, nullable=False)
+    xp: Mapped[int] = mapped_column(Integer, nullable=False)
+    awarded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "reward_key", name="uq_game_reward_user_key"),
+        Index("idx_game_reward_user_awarded", "user_id", "awarded_at"),
+    )
+
+
+class GameDailyProgress(Base):
+    __tablename__ = "game_daily_progress"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"), primary_key=True)
+    goal_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    completed_quests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    goal_reached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

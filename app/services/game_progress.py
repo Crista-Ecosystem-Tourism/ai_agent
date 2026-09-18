@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -12,9 +13,11 @@ from app.db.models.game import (
     GameAttempt,
     GameCity,
     GameContentRevision,
+    GameDailyProgress,
     GameProfile,
     GameQuest,
     GameQuestCompletion,
+    GameRewardLedger,
     GameStamp,
 )
 
@@ -25,6 +28,8 @@ STARTER_STAMP_KEY = "moscow-starter"
 ONBOARDING_QUEST_ID = "moscow-red-square"
 DAILY_ENERGY = 5
 ONBOARDING_XP = 50
+DAILY_GOAL_QUESTS = 2
+GAME_TIMEZONE = ZoneInfo("Europe/Moscow")
 
 
 class GameContentUnavailableError(RuntimeError):
@@ -44,10 +49,12 @@ class GameProgressService:
             profile = await self._ensure_profile(db, user_id)
             content = await self._published_content(db)
             stamp = await self._backfill_onboarding_completion(db, user_id)
+            daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
                 "content": self._public_content(content.payload),
                 "profile": self._profile_payload(profile),
+                "daily": daily,
                 "completed": stamp is not None,
                 "starter_stamp": self._stamp_payload(stamp),
             }
@@ -94,8 +101,11 @@ class GameProgressService:
                 )
                 stamp_id = result.scalar_one_or_none()
                 if stamp_id:
-                    xp_awarded = ONBOARDING_XP
+                    xp_awarded = await self._record_reward(
+                        db, user_id, ONBOARDING_QUEST_ID, STARTER_STAMP_KEY, ONBOARDING_XP, now,
+                    )
                     profile.xp += xp_awarded
+                    await self._record_daily_completion(db, profile, user_id, now)
                     profile.updated_at = now
                 stamp = await db.scalar(
                     select(GameStamp).where(
@@ -108,11 +118,13 @@ class GameProgressService:
                 profile.energy = max(0, profile.energy - 1)
                 profile.updated_at = now
 
+            daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
                 "correct": is_correct,
                 "xp_awarded": xp_awarded,
                 "profile": self._profile_payload(profile),
+                "daily": daily,
                 "completed": stamp is not None,
                 "starter_stamp": self._stamp_payload(stamp),
             }
@@ -136,6 +148,7 @@ class GameProgressService:
             completed_ids = set((await db.scalars(
                 select(GameQuestCompletion.quest_id).where(GameQuestCompletion.user_id == user_id)
             )).all())
+            daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
 
             nodes = []
@@ -155,6 +168,7 @@ class GameProgressService:
             return {
                 "city": {"id": city.id, "name": city.name, "tier": city.tier},
                 "profile": self._profile_payload(profile),
+                "daily": daily,
                 "nodes": nodes,
             }
 
@@ -167,11 +181,13 @@ class GameProgressService:
             await self._ensure_quest_unlocked(db, user_id, quest)
             completed = await db.get(GameQuestCompletion, (user_id, quest.id))
             stamp = await self._quest_stamp(db, user_id, content)
+            daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
                 "quest": self._quest_payload(quest),
                 "content": self._public_content(content.payload),
                 "profile": self._profile_payload(profile),
+                "daily": daily,
                 "completed": completed is not None,
                 "stamp": self._stamp_payload(stamp),
             }
@@ -226,8 +242,11 @@ class GameProgressService:
                 )
                 stamp_id = result.scalar_one_or_none()
                 if stamp_id:
-                    xp_awarded = int(reward.get("xp", 0))
+                    xp_awarded = await self._record_reward(
+                        db, user_id, quest.id, stamp_key, int(reward.get("xp", 0)), now,
+                    )
                     profile.xp += xp_awarded
+                    await self._record_daily_completion(db, profile, user_id, now)
                     profile.updated_at = now
                 stamp = await self._quest_stamp(db, user_id, content)
                 await self._record_quest_completion(db, user_id, quest.id, now)
@@ -235,17 +254,19 @@ class GameProgressService:
                 profile.energy = max(0, profile.energy - 1)
                 profile.updated_at = now
 
+            daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
                 "correct": is_correct,
                 "xp_awarded": xp_awarded,
                 "profile": self._profile_payload(profile),
+                "daily": daily,
                 "completed": stamp is not None,
                 "stamp": self._stamp_payload(stamp),
             }
 
     async def _ensure_profile(self, db: AsyncSession, user_id: str) -> GameProfile:
-        today = date.today()
+        today = datetime.now(GAME_TIMEZONE).date()
         profile = await db.get(GameProfile, user_id)
         if profile is None:
             profile = GameProfile(
@@ -253,6 +274,7 @@ class GameProgressService:
                 xp=0,
                 energy=DAILY_ENERGY,
                 energy_refreshed_on=today,
+                streak=0,
             )
             db.add(profile)
             await db.flush()
@@ -261,6 +283,70 @@ class GameProgressService:
             profile.energy_refreshed_on = today
             profile.updated_at = datetime.now(timezone.utc)
         return profile
+
+    @staticmethod
+    async def _record_reward(
+        db: AsyncSession,
+        user_id: str,
+        quest_id: str,
+        reward_key: str,
+        xp: int,
+        awarded_at: datetime,
+    ) -> int:
+        result = await db.execute(
+            pg_insert(GameRewardLedger)
+            .values(
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                quest_id=quest_id,
+                reward_key=reward_key,
+                xp=xp,
+                awarded_at=awarded_at,
+            )
+            .on_conflict_do_nothing(constraint="uq_game_reward_user_key")
+            .returning(GameRewardLedger.id)
+        )
+        return xp if result.scalar_one_or_none() else 0
+
+    @staticmethod
+    async def _record_daily_completion(
+        db: AsyncSession, profile: GameProfile, user_id: str, completed_at: datetime,
+    ) -> None:
+        activity_date = completed_at.astimezone(GAME_TIMEZONE).date()
+        if profile.last_activity_on != activity_date:
+            profile.streak = (
+                profile.streak + 1
+                if profile.last_activity_on == activity_date - timedelta(days=1)
+                else 1
+            )
+            profile.last_activity_on = activity_date
+
+        daily = await db.get(GameDailyProgress, (user_id, activity_date))
+        if daily is None:
+            daily = GameDailyProgress(
+                user_id=user_id,
+                goal_date=activity_date,
+                completed_quests=0,
+            )
+            db.add(daily)
+        daily.completed_quests += 1
+        if daily.completed_quests >= DAILY_GOAL_QUESTS and daily.goal_reached_at is None:
+            daily.goal_reached_at = completed_at
+
+    @staticmethod
+    async def _daily_payload(
+        db: AsyncSession, user_id: str, profile: GameProfile,
+    ) -> dict[str, Any]:
+        today = datetime.now(GAME_TIMEZONE).date()
+        daily = await db.get(GameDailyProgress, (user_id, today))
+        completed = daily.completed_quests if daily is not None else 0
+        return {
+            "timezone": "Europe/Moscow",
+            "streak": profile.streak,
+            "completed_quests": completed,
+            "goal": DAILY_GOAL_QUESTS,
+            "goal_reached": daily is not None and daily.goal_reached_at is not None,
+        }
 
     async def _published_content(self, db: AsyncSession) -> GameContentRevision:
         content = await db.scalar(
@@ -359,7 +445,7 @@ class GameProgressService:
 
     @staticmethod
     def _profile_payload(profile: GameProfile) -> dict[str, Any]:
-        return {"xp": profile.xp, "energy": profile.energy}
+        return {"xp": profile.xp, "energy": profile.energy, "streak": profile.streak}
 
     @staticmethod
     def _quest_payload(quest: GameQuest) -> dict[str, Any]:

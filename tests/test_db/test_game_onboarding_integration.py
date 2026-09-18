@@ -37,7 +37,11 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_reward_is_server_owned_and_idempotent(self):
         initial = await self.game.get_onboarding(self.user_id)
-        self.assertEqual(initial["profile"], {"xp": 0, "energy": 5})
+        self.assertEqual(initial["profile"], {"xp": 0, "energy": 5, "streak": 0})
+        self.assertEqual(initial["daily"], {
+            "timezone": "Europe/Moscow", "streak": 0, "completed_quests": 0,
+            "goal": 2, "goal_reached": False,
+        })
         self.assertNotIn("correct_option_id", initial["content"]["question"])
         initial_path = await self.game.get_moscow_path(self.user_id)
         self.assertEqual(initial_path["nodes"], [
@@ -57,6 +61,14 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "unlocked": False,
                 "prerequisite_quest_id": "moscow-red-square",
             },
+            {
+                "id": "moscow-tsar-bell",
+                "kind": "fact-quiz",
+                "position": 3,
+                "completed": False,
+                "unlocked": False,
+                "prerequisite_quest_id": "moscow-spasskaya-tower",
+            },
         ])
 
         with self.assertRaises(GameQuestLockedError):
@@ -66,19 +78,22 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         incorrect = await self.game.answer_red_square(self.user_id, "color")
         self.assertFalse(incorrect["correct"])
-        self.assertEqual(incorrect["profile"], {"xp": 0, "energy": 4})
+        self.assertEqual(incorrect["profile"], {"xp": 0, "energy": 4, "streak": 0})
         self.assertEqual(incorrect["xp_awarded"], 0)
 
         correct = await self.game.answer_red_square(self.user_id, "beautiful")
         self.assertTrue(correct["correct"])
         self.assertEqual(correct["xp_awarded"], 50)
-        self.assertEqual(correct["profile"], {"xp": 50, "energy": 4})
+        self.assertEqual(correct["profile"], {"xp": 50, "energy": 4, "streak": 1})
+        self.assertEqual(correct["daily"]["completed_quests"], 1)
+        self.assertFalse(correct["daily"]["goal_reached"])
         self.assertTrue(correct["completed"])
         self.assertEqual(correct["starter_stamp"]["key"], "moscow-starter")
 
         completed_path = await self.game.get_moscow_path(self.user_id)
         self.assertTrue(completed_path["nodes"][0]["completed"])
         self.assertTrue(completed_path["nodes"][1]["unlocked"])
+        self.assertFalse(completed_path["nodes"][2]["unlocked"])
 
         second = await self.game.get_moscow_quest(self.user_id, "moscow-spasskaya-tower")
         self.assertEqual(second["quest"]["prerequisite_quest_id"], "moscow-red-square")
@@ -88,22 +103,36 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.user_id, "moscow-spasskaya-tower", "1547"
         )
         self.assertFalse(second_incorrect["correct"])
-        self.assertEqual(second_incorrect["profile"], {"xp": 50, "energy": 3})
+        self.assertEqual(second_incorrect["profile"], {"xp": 50, "energy": 3, "streak": 1})
 
         second_correct = await self.game.answer_moscow_quest(
             self.user_id, "moscow-spasskaya-tower", "1491"
         )
         self.assertTrue(second_correct["correct"])
         self.assertEqual(second_correct["xp_awarded"], 25)
-        self.assertEqual(second_correct["profile"], {"xp": 75, "energy": 3})
+        self.assertEqual(second_correct["profile"], {"xp": 75, "energy": 3, "streak": 1})
         self.assertEqual(second_correct["stamp"]["key"], "moscow-spasskaya")
+        self.assertEqual(second_correct["daily"]["completed_quests"], 2)
+        self.assertTrue(second_correct["daily"]["goal_reached"])
+
+        third = await self.game.get_moscow_quest(self.user_id, "moscow-tsar-bell")
+        self.assertEqual(third["quest"]["prerequisite_quest_id"], "moscow-spasskaya-tower")
+        self.assertNotIn("correct_option_id", third["content"]["question"])
+        third_correct = await self.game.answer_moscow_quest(
+            self.user_id, "moscow-tsar-bell", "1735"
+        )
+        self.assertTrue(third_correct["correct"])
+        self.assertEqual(third_correct["xp_awarded"], 25)
+        self.assertEqual(third_correct["profile"], {"xp": 100, "energy": 3, "streak": 1})
+        self.assertEqual(third_correct["daily"]["completed_quests"], 3)
+        self.assertEqual(third_correct["stamp"]["key"], "moscow-tsar-bell")
 
         second_retry = await self.game.answer_moscow_quest(
             self.user_id, "moscow-spasskaya-tower", "1491"
         )
         self.assertEqual(second_retry["xp_awarded"], 0)
-        self.assertEqual(second_retry["profile"], {"xp": 75, "energy": 3})
+        self.assertEqual(second_retry["profile"], {"xp": 100, "energy": 3, "streak": 1})
 
         retry = await self.game.answer_red_square(self.user_id, "beautiful")
         self.assertEqual(retry["xp_awarded"], 0)
-        self.assertEqual(retry["profile"], {"xp": 75, "energy": 3})
+        self.assertEqual(retry["profile"], {"xp": 100, "energy": 3, "streak": 1})
