@@ -44,32 +44,31 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertNotIn("correct_option_id", initial["content"]["question"])
         initial_path = await self.game.get_moscow_path(self.user_id)
-        self.assertEqual(initial_path["nodes"], [
-            {
-                "id": "moscow-red-square",
-                "kind": "onboarding",
-                "position": 1,
-                "completed": False,
-                "unlocked": True,
-                "prerequisite_quest_id": None,
+        self.assertEqual(initial_path["city"], {
+            "id": "moscow", "name": "Москва", "tier": 1,
+            "required_quest_count": 10,
+            "completion_stamp": {
+                "key": "moscow-city-explorer", "title": "Штамп «Москва: городской круг»",
             },
-            {
-                "id": "moscow-spasskaya-tower",
-                "kind": "fact-quiz",
-                "position": 2,
-                "completed": False,
-                "unlocked": False,
-                "prerequisite_quest_id": "moscow-red-square",
-            },
-            {
-                "id": "moscow-tsar-bell",
-                "kind": "fact-quiz",
-                "position": 3,
-                "completed": False,
-                "unlocked": False,
-                "prerequisite_quest_id": "moscow-spasskaya-tower",
-            },
-        ])
+        })
+        self.assertEqual(
+            [node["id"] for node in initial_path["nodes"]],
+            [
+                "moscow-red-square", "moscow-spasskaya-tower", "moscow-tsar-bell",
+                "moscow-annunciation-cathedral", "moscow-gum", "moscow-zaryadye",
+                "moscow-tretyakov-gallery", "moscow-bolshoi-theatre", "moscow-metro", "moscow-vdnh",
+            ],
+        )
+        self.assertEqual(
+            [node["district"]["id"] for node in initial_path["nodes"]],
+            [
+                "moscow-kremlin", "moscow-kremlin", "moscow-kremlin", "moscow-kremlin",
+                "moscow-kitaigorod", "moscow-kitaigorod", "moscow-zamoskvorechye",
+                "moscow-teatralny", "moscow-teatralny", "moscow-vdnh",
+            ],
+        )
+        self.assertTrue(initial_path["nodes"][0]["unlocked"])
+        self.assertFalse(any(node["unlocked"] for node in initial_path["nodes"][1:]))
 
         with self.assertRaises(GameQuestLockedError):
             await self.game.get_moscow_quest(self.user_id, "moscow-spasskaya-tower")
@@ -136,3 +135,21 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         retry = await self.game.answer_red_square(self.user_id, "beautiful")
         self.assertEqual(retry["xp_awarded"], 0)
         self.assertEqual(retry["profile"], {"xp": 100, "energy": 3, "streak": 1})
+
+        tier_one_answers = [
+            ("moscow-annunciation-cathedral", "1489"),
+            ("moscow-gum", "1893"),
+            ("moscow-zaryadye", "2017"),
+            ("moscow-tretyakov-gallery", "1856"),
+            ("moscow-bolshoi-theatre", "1825"),
+            ("moscow-metro", "1935"),
+            ("moscow-vdnh", "1939"),
+        ]
+        for quest_id, answer_key in tier_one_answers:
+            result = await self.game.answer_moscow_quest(self.user_id, quest_id, answer_key)
+            self.assertTrue(result["correct"])
+            self.assertEqual(result["xp_awarded"], 25)
+
+        completed_city_path = await self.game.get_moscow_path(self.user_id)
+        self.assertTrue(all(node["completed"] for node in completed_city_path["nodes"]))
+        self.assertEqual(completed_city_path["profile"]["xp"], 275)

@@ -60,10 +60,26 @@ class GameCity(Base, TimestampMixin):
     region_id: Mapped[str] = mapped_column(ForeignKey("game_region.id"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     tier: Mapped[int] = mapped_column(Integer, nullable=False)
+    required_quest_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    completion_stamp_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    completion_stamp_title: Mapped[str | None] = mapped_column(String, nullable=True)
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("idx_game_city_region", "region_id"),
+    )
+
+
+class GameDistrict(Base, TimestampMixin):
+    __tablename__ = "game_district"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    city_id: Mapped[str] = mapped_column(ForeignKey("game_city.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("city_id", "position", name="uq_game_district_city_position"),
     )
 
 
@@ -75,6 +91,7 @@ class GameQuest(Base, TimestampMixin):
     content_revision_id: Mapped[str] = mapped_column(
         ForeignKey("game_content_revision.id"), nullable=False
     )
+    district_id: Mapped[str | None] = mapped_column(ForeignKey("game_district.id"), nullable=True)
     kind: Mapped[str] = mapped_column(String, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     prerequisite_quest_id: Mapped[str | None] = mapped_column(

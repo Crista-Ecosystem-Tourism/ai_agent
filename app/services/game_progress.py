@@ -14,6 +14,7 @@ from app.db.models.game import (
     GameCity,
     GameContentRevision,
     GameDailyProgress,
+    GameDistrict,
     GameProfile,
     GameQuest,
     GameQuestCompletion,
@@ -145,6 +146,12 @@ class GameProgressService:
                 .where(GameQuest.city_id == city.id, GameQuest.is_published.is_(True))
                 .order_by(GameQuest.position)
             )).all())
+            districts = {
+                district.id: district
+                for district in (await db.scalars(
+                    select(GameDistrict).where(GameDistrict.city_id == city.id)
+                )).all()
+            }
             completed_ids = set((await db.scalars(
                 select(GameQuestCompletion.quest_id).where(GameQuestCompletion.user_id == user_id)
             )).all())
@@ -164,9 +171,19 @@ class GameProgressService:
                         or quest.prerequisite_quest_id in completed_ids
                     ),
                     "prerequisite_quest_id": quest.prerequisite_quest_id,
+                    "district": self._district_payload(districts.get(quest.district_id)),
                 })
             return {
-                "city": {"id": city.id, "name": city.name, "tier": city.tier},
+                "city": {
+                    "id": city.id,
+                    "name": city.name,
+                    "tier": city.tier,
+                    "required_quest_count": city.required_quest_count,
+                    "completion_stamp": (
+                        {"key": city.completion_stamp_key, "title": city.completion_stamp_title}
+                        if city.completion_stamp_key and city.completion_stamp_title else None
+                    ),
+                },
                 "profile": self._profile_payload(profile),
                 "daily": daily,
                 "nodes": nodes,
@@ -455,6 +472,12 @@ class GameProgressService:
             "position": quest.position,
             "prerequisite_quest_id": quest.prerequisite_quest_id,
         }
+
+    @staticmethod
+    def _district_payload(district: GameDistrict | None) -> dict[str, Any] | None:
+        if district is None:
+            return None
+        return {"id": district.id, "name": district.name, "position": district.position}
 
     @staticmethod
     async def _quest_stamp(
