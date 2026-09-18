@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_503_SERVICE_UNAVAILABLE
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_409_CONFLICT, HTTP_503_SERVICE_UNAVAILABLE
 
 from app.dependencies import get_game_progress_service
 from app.security.deps import get_current_user
-from app.services.game_progress import GameContentUnavailableError, GameProgressService
+from app.services.game_progress import (
+    GameContentUnavailableError,
+    GameProgressService,
+    GameQuestLockedError,
+)
 
 
 router = APIRouter(prefix="/game", tags=["game"])
@@ -56,4 +60,47 @@ async def get_moscow_path(
         raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
             detail="Маршрут Москвы временно недоступен",
+        )
+
+
+@router.get("/paths/moscow/quests/{quest_id}")
+async def get_moscow_quest(
+    quest_id: str,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.get_moscow_quest(user["sub"], quest_id)
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши предыдущий квест Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Квест Москвы временно недоступен",
+        )
+
+
+@router.post("/paths/moscow/quests/{quest_id}/answer")
+async def answer_moscow_quest(
+    quest_id: str,
+    payload: RedSquareAnswerIn,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.answer_moscow_quest(user["sub"], quest_id, payload.answer_key)
+    except ValueError:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестный вариант ответа")
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши предыдущий квест Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Квест Москвы временно недоступен",
         )

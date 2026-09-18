@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 # Register all relationship targets before configuring SQLAlchemy mappers.
 from app.db.models import chat  # noqa: F401
 from app.db.models.auth import User
-from app.services.game_progress import GameProgressService
+from app.services.game_progress import GameProgressService, GameQuestLockedError
 from app.db.dsn import get_database_url
 
 
@@ -40,13 +40,29 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(initial["profile"], {"xp": 0, "energy": 5})
         self.assertNotIn("correct_option_id", initial["content"]["question"])
         initial_path = await self.game.get_moscow_path(self.user_id)
-        self.assertEqual(initial_path["nodes"], [{
-            "id": "moscow-red-square",
-            "kind": "onboarding",
-            "position": 1,
-            "completed": False,
-            "unlocked": True,
-        }])
+        self.assertEqual(initial_path["nodes"], [
+            {
+                "id": "moscow-red-square",
+                "kind": "onboarding",
+                "position": 1,
+                "completed": False,
+                "unlocked": True,
+                "prerequisite_quest_id": None,
+            },
+            {
+                "id": "moscow-spasskaya-tower",
+                "kind": "fact-quiz",
+                "position": 2,
+                "completed": False,
+                "unlocked": False,
+                "prerequisite_quest_id": "moscow-red-square",
+            },
+        ])
+
+        with self.assertRaises(GameQuestLockedError):
+            await self.game.get_moscow_quest(self.user_id, "moscow-spasskaya-tower")
+        with self.assertRaises(GameQuestLockedError):
+            await self.game.answer_moscow_quest(self.user_id, "moscow-spasskaya-tower", "1491")
 
         incorrect = await self.game.answer_red_square(self.user_id, "color")
         self.assertFalse(incorrect["correct"])
@@ -62,7 +78,32 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         completed_path = await self.game.get_moscow_path(self.user_id)
         self.assertTrue(completed_path["nodes"][0]["completed"])
+        self.assertTrue(completed_path["nodes"][1]["unlocked"])
+
+        second = await self.game.get_moscow_quest(self.user_id, "moscow-spasskaya-tower")
+        self.assertEqual(second["quest"]["prerequisite_quest_id"], "moscow-red-square")
+        self.assertNotIn("correct_option_id", second["content"]["question"])
+
+        second_incorrect = await self.game.answer_moscow_quest(
+            self.user_id, "moscow-spasskaya-tower", "1547"
+        )
+        self.assertFalse(second_incorrect["correct"])
+        self.assertEqual(second_incorrect["profile"], {"xp": 50, "energy": 3})
+
+        second_correct = await self.game.answer_moscow_quest(
+            self.user_id, "moscow-spasskaya-tower", "1491"
+        )
+        self.assertTrue(second_correct["correct"])
+        self.assertEqual(second_correct["xp_awarded"], 25)
+        self.assertEqual(second_correct["profile"], {"xp": 75, "energy": 3})
+        self.assertEqual(second_correct["stamp"]["key"], "moscow-spasskaya")
+
+        second_retry = await self.game.answer_moscow_quest(
+            self.user_id, "moscow-spasskaya-tower", "1491"
+        )
+        self.assertEqual(second_retry["xp_awarded"], 0)
+        self.assertEqual(second_retry["profile"], {"xp": 75, "energy": 3})
 
         retry = await self.game.answer_red_square(self.user_id, "beautiful")
         self.assertEqual(retry["xp_awarded"], 0)
-        self.assertEqual(retry["profile"], {"xp": 50, "energy": 4})
+        self.assertEqual(retry["profile"], {"xp": 75, "energy": 3})

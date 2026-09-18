@@ -75,6 +75,9 @@ class GameQuest(Base, TimestampMixin):
     )
     kind: Mapped[str] = mapped_column(String, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    prerequisite_quest_id: Mapped[str | None] = mapped_column(
+        ForeignKey("game_quest.id"), nullable=True
+    )
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
