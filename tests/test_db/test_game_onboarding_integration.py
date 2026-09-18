@@ -74,6 +74,8 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await self.game.get_moscow_quest(self.user_id, "moscow-spasskaya-tower")
         with self.assertRaises(GameQuestLockedError):
             await self.game.answer_moscow_quest(self.user_id, "moscow-spasskaya-tower", "1491")
+        with self.assertRaises(GameQuestLockedError):
+            await self.game.get_moscow_boss(self.user_id)
 
         incorrect = await self.game.answer_red_square(self.user_id, "color")
         self.assertFalse(incorrect["correct"])
@@ -153,3 +155,48 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         completed_city_path = await self.game.get_moscow_path(self.user_id)
         self.assertTrue(all(node["completed"] for node in completed_city_path["nodes"]))
         self.assertEqual(completed_city_path["profile"]["xp"], 275)
+        self.assertEqual(completed_city_path["boss"], {
+            "title": "Финальный круг Москвы",
+            "question_count": 3,
+            "unlocked": True,
+            "completed": False,
+            "sandbox_unlocked": False,
+        })
+
+        boss = await self.game.get_moscow_boss(self.user_id)
+        self.assertEqual(boss["city"], {"id": "moscow", "name": "Москва"})
+        self.assertEqual(len(boss["content"]["questions"]), 3)
+        self.assertTrue(all(
+            "correct_option_id" not in question
+            for question in boss["content"]["questions"]
+        ))
+
+        boss_incorrect = await self.game.answer_moscow_boss(self.user_id, [
+            {"question_id": "moscow-boss-cathedral", "answer_key": "1561"},
+            {"question_id": "moscow-boss-gum", "answer_key": "1893"},
+            {"question_id": "moscow-boss-vdnh", "answer_key": "1939"},
+        ])
+        self.assertFalse(boss_incorrect["correct"])
+        self.assertEqual(boss_incorrect["incorrect_answers"], 1)
+        self.assertFalse(boss_incorrect["completed"])
+        self.assertEqual(boss_incorrect["profile"], {"xp": 275, "energy": 2, "streak": 1})
+
+        boss_correct = await self.game.answer_moscow_boss(self.user_id, [
+            {"question_id": "moscow-boss-cathedral", "answer_key": "1489"},
+            {"question_id": "moscow-boss-gum", "answer_key": "1893"},
+            {"question_id": "moscow-boss-vdnh", "answer_key": "1939"},
+        ])
+        self.assertTrue(boss_correct["correct"])
+        self.assertTrue(boss_correct["completed"])
+        self.assertTrue(boss_correct["sandbox_unlocked"])
+        self.assertEqual(boss_correct["city_stamp"]["key"], "moscow-city-explorer")
+        self.assertEqual(boss_correct["profile"], {"xp": 275, "energy": 2, "streak": 1})
+
+        boss_retry = await self.game.answer_moscow_boss(self.user_id, [
+            {"question_id": "moscow-boss-cathedral", "answer_key": "1489"},
+            {"question_id": "moscow-boss-gum", "answer_key": "1893"},
+            {"question_id": "moscow-boss-vdnh", "answer_key": "1939"},
+        ])
+        self.assertTrue(boss_retry["completed"])
+        self.assertEqual(boss_retry["profile"], {"xp": 275, "energy": 2, "streak": 1})
+        self.assertEqual((await self.game.get_moscow_path(self.user_id))["boss"]["sandbox_unlocked"], True)

@@ -63,6 +63,9 @@ class GameCity(Base, TimestampMixin):
     required_quest_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     completion_stamp_key: Mapped[str | None] = mapped_column(String, nullable=True)
     completion_stamp_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    boss_content_revision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("game_content_revision.id"), nullable=True
+    )
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (

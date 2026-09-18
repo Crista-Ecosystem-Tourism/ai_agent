@@ -155,6 +155,7 @@ class GameProgressService:
             completed_ids = set((await db.scalars(
                 select(GameQuestCompletion.quest_id).where(GameQuestCompletion.user_id == user_id)
             )).all())
+            boss = await self._moscow_boss_summary(db, user_id, city, quests, completed_ids)
             daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
 
@@ -187,6 +188,104 @@ class GameProgressService:
                 "profile": self._profile_payload(profile),
                 "daily": daily,
                 "nodes": nodes,
+                "boss": boss,
+            }
+
+    async def get_moscow_boss(self, user_id: str) -> dict[str, Any]:
+        """Return the city boss only after every published Moscow node is complete."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, content = await self._published_moscow_boss(db)
+            await self._ensure_city_boss_unlocked(db, user_id, city)
+            city_stamp = await self._city_stamp(db, user_id, city)
+            daily = await self._daily_payload(db, user_id, profile)
+            await db.commit()
+            return {
+                "city": {"id": city.id, "name": city.name},
+                "content": self._public_content(content.payload),
+                "profile": self._profile_payload(profile),
+                "daily": daily,
+                "completed": city_stamp is not None,
+                "city_stamp": self._stamp_payload(city_stamp),
+                "sandbox_unlocked": city_stamp is not None,
+            }
+
+    async def answer_moscow_boss(
+        self, user_id: str, answers: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """Check all three boss answers on the server and award the city stamp once."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, content = await self._published_moscow_boss(db)
+            await self._ensure_city_boss_unlocked(db, user_id, city)
+
+            questions = content.payload.get("questions")
+            if not isinstance(questions, list) or len(questions) != 3:
+                raise GameContentUnavailableError("City boss must contain exactly three questions")
+            answer_by_question = {answer.get("question_id"): answer.get("answer_key") for answer in answers}
+            question_ids = {question.get("id") for question in questions}
+            if (
+                len(answer_by_question) != 3
+                or None in answer_by_question
+                or set(answer_by_question) != question_ids
+            ):
+                raise ValueError("All boss questions must be answered exactly once")
+
+            now = datetime.now(timezone.utc)
+            incorrect_answers = 0
+            for question in questions:
+                question_id = question.get("id")
+                options = question.get("options", [])
+                allowed_answers = {option.get("id") for option in options}
+                answer_key = answer_by_question[question_id]
+                if answer_key not in allowed_answers:
+                    raise ValueError("Unknown answer option")
+                is_correct = answer_key == question.get("correct_option_id")
+                if not is_correct:
+                    incorrect_answers += 1
+                db.add(GameAttempt(
+                    id=uuid.uuid4().hex,
+                    user_id=user_id,
+                    content_revision_id=content.id,
+                    interaction_key=str(question_id),
+                    answer_key=answer_key,
+                    is_correct=is_correct,
+                    created_at=now,
+                ))
+
+            city_stamp: GameStamp | None = None
+            if incorrect_answers:
+                profile.energy = max(0, profile.energy - incorrect_answers)
+                profile.updated_at = now
+            else:
+                if not city.completion_stamp_key or not city.completion_stamp_title:
+                    raise GameContentUnavailableError("City completion stamp is not configured")
+                await db.execute(
+                    pg_insert(GameStamp)
+                    .values(
+                        id=uuid.uuid4().hex,
+                        user_id=user_id,
+                        stamp_key=city.completion_stamp_key,
+                        content_revision_id=content.id,
+                        title=city.completion_stamp_title,
+                        earned_at=now,
+                    )
+                    .on_conflict_do_nothing(constraint="uq_game_stamp_user_key")
+                )
+                city_stamp = await self._city_stamp(db, user_id, city)
+
+            daily = await self._daily_payload(db, user_id, profile)
+            await db.commit()
+            return {
+                "correct": incorrect_answers == 0,
+                "incorrect_answers": incorrect_answers,
+                "profile": self._profile_payload(profile),
+                "daily": daily,
+                "completed": city_stamp is not None,
+                "city_stamp": self._stamp_payload(city_stamp),
+                "sandbox_unlocked": city_stamp is not None,
             }
 
     async def get_moscow_quest(self, user_id: str, quest_id: str) -> dict[str, Any]:
@@ -416,6 +515,81 @@ class GameProgressService:
             raise GameContentUnavailableError("Moscow quest content is not published")
         return quest, content
 
+    async def _published_moscow_boss(
+        self, db: AsyncSession,
+    ) -> tuple[GameCity, GameContentRevision]:
+        city = await db.scalar(
+            select(GameCity).where(GameCity.id == "moscow", GameCity.is_published.is_(True))
+        )
+        if city is None or not city.boss_content_revision_id:
+            raise GameContentUnavailableError("Moscow city boss is not published")
+        content = await db.scalar(
+            select(GameContentRevision).where(
+                GameContentRevision.id == city.boss_content_revision_id,
+                GameContentRevision.is_published.is_(True),
+            )
+        )
+        if content is None:
+            raise GameContentUnavailableError("Moscow city boss content is not published")
+        return city, content
+
+    async def _moscow_boss_summary(
+        self,
+        db: AsyncSession,
+        user_id: str,
+        city: GameCity,
+        quests: list[GameQuest],
+        completed_ids: set[str],
+    ) -> dict[str, Any] | None:
+        if not city.boss_content_revision_id:
+            return None
+        content = await db.scalar(
+            select(GameContentRevision).where(
+                GameContentRevision.id == city.boss_content_revision_id,
+                GameContentRevision.is_published.is_(True),
+            )
+        )
+        if content is None:
+            return None
+        questions = content.payload.get("questions")
+        if not isinstance(questions, list) or len(questions) != 3:
+            return None
+        quest_ids = {quest.id for quest in quests}
+        unlocked = (
+            len(quest_ids) >= city.required_quest_count
+            and completed_ids.issuperset(quest_ids)
+        )
+        city_stamp = await self._city_stamp(db, user_id, city)
+        scene = content.payload.get("scene", {})
+        return {
+            "title": scene.get("title", "Финальный круг Москвы"),
+            "question_count": len(questions),
+            "unlocked": unlocked,
+            "completed": city_stamp is not None,
+            "sandbox_unlocked": city_stamp is not None,
+        }
+
+    @staticmethod
+    async def _ensure_city_boss_unlocked(
+        db: AsyncSession, user_id: str, city: GameCity,
+    ) -> None:
+        quest_ids = set((await db.scalars(
+            select(GameQuest.id).where(
+                GameQuest.city_id == city.id,
+                GameQuest.is_published.is_(True),
+            )
+        )).all())
+        if len(quest_ids) < city.required_quest_count:
+            raise GameContentUnavailableError("Moscow path is incomplete")
+        completed_ids = set((await db.scalars(
+            select(GameQuestCompletion.quest_id).where(
+                GameQuestCompletion.user_id == user_id,
+                GameQuestCompletion.quest_id.in_(quest_ids),
+            )
+        )).all())
+        if completed_ids != quest_ids:
+            raise GameQuestLockedError("Complete every Moscow quest before the city boss")
+
     @staticmethod
     async def _ensure_quest_unlocked(
         db: AsyncSession, user_id: str, quest: GameQuest,
@@ -456,9 +630,18 @@ class GameProgressService:
 
     @staticmethod
     def _public_content(payload: dict[str, Any]) -> dict[str, Any]:
+        public_payload = dict(payload)
         question = dict(payload.get("question", {}))
         question.pop("correct_option_id", None)
-        return {**payload, "question": question}
+        public_payload["question"] = question
+        if isinstance(payload.get("questions"), list):
+            public_payload["questions"] = [
+                {**question, "correct_option_id": None}
+                for question in payload["questions"]
+            ]
+            for question in public_payload["questions"]:
+                question.pop("correct_option_id", None)
+        return public_payload
 
     @staticmethod
     def _profile_payload(profile: GameProfile) -> dict[str, Any]:
@@ -490,6 +673,19 @@ class GameProgressService:
             select(GameStamp).where(
                 GameStamp.user_id == user_id,
                 GameStamp.stamp_key == stamp_key,
+            )
+        )
+
+    @staticmethod
+    async def _city_stamp(
+        db: AsyncSession, user_id: str, city: GameCity,
+    ) -> GameStamp | None:
+        if not city.completion_stamp_key:
+            return None
+        return await db.scalar(
+            select(GameStamp).where(
+                GameStamp.user_id == user_id,
+                GameStamp.stamp_key == city.completion_stamp_key,
             )
         )
 
