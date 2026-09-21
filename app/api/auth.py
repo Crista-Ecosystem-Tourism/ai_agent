@@ -48,6 +48,7 @@ class UserOut(BaseModel):
     id: str
     email: str
     name: Optional[str] = None
+    is_editor: bool = False
 
 
 class AuthOut(BaseModel):
@@ -79,7 +80,7 @@ async def register(
     token = create_access_token(sub=user.id, extra={"email": user.email})
     return AuthOut(
         access_token=token,
-        user=UserOut(id=user.id, email=user.email, name=user.name),
+        user=UserOut(id=user.id, email=user.email, name=user.name, is_editor=user.is_editor),
     )
 
 
@@ -110,7 +111,7 @@ async def login(
     token = create_access_token(sub=user.id, extra={"email": user.email})
     return AuthOut(
         access_token=token,
-        user=UserOut(id=user.id, email=user.email, name=user.name),
+        user=UserOut(id=user.id, email=user.email, name=user.name, is_editor=user.is_editor),
     )
 
 
@@ -129,4 +130,5 @@ async def me(
         id=user_data["id"],
         email=user_data["email"],
         name=user_data["name"],
+        is_editor=user_data["is_editor"],
     )

@@ -42,7 +42,7 @@ class UserService:
     async def get_by_id(self, user_id: str) -> Optional[dict]:
         async with self.session_factory() as db:
             row = (await db.execute(
-                select(User.id, User.email, User.name, User.is_active)
+                select(User.id, User.email, User.name, User.is_active, User.is_editor)
                 .where(User.id == user_id)
             )).first()
 
@@ -53,7 +53,8 @@ class UserService:
                 "id": row.id,
                 "email": row.email,
                 "name": row.name,
-                "is_active": row.is_active
+                "is_active": row.is_active,
+                "is_editor": row.is_editor,
             }
 
     async def get_by_email(self, email: str) -> Optional[User]:
