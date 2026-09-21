@@ -284,6 +284,9 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(path["profile"], onboarding["profile"])
 
     async def test_wiki_draft_is_private_until_editorial_publish(self):
+        moscow = await self.wiki.get_published("moscow")
+        self.assertEqual(moscow["title"], "Москва")
+        self.assertEqual(len(moscow["sources"]), 2)
         draft = await self.wiki.create_draft(
             self.user_id,
             "moscow-test",
