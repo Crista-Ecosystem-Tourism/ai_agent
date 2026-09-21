@@ -220,6 +220,9 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sandbox["drill"]["title"], "Правда или миф")
         self.assertEqual(len(sandbox["drill"]["statements"]), 3)
         self.assertNotIn("correct_answer", sandbox["drill"]["statements"][0])
+        self.assertEqual(sandbox["matching"]["title"], "Соедини эпохи")
+        self.assertEqual(len(sandbox["matching"]["pairs"]), 3)
+        self.assertNotIn("correct_choice_id", sandbox["matching"]["pairs"][0])
 
         truth_myth = await self.game.answer_moscow_truth_myth(
             self.user_id, "zaryadye-2017", "truth",
@@ -227,6 +230,16 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(truth_myth["correct"])
         self.assertIn("2017", truth_myth["explanation"])
         self.assertEqual(truth_myth["profile"], {"xp": 275, "energy": 2, "streak": 1})
+
+        matching = await self.game.answer_moscow_matching(self.user_id, [
+            {"pair_id": "cathedral-year", "choice_id": "year-1489"},
+            {"pair_id": "gum-year", "choice_id": "year-1893"},
+            {"pair_id": "vdnh-year", "choice_id": "year-1939"},
+        ])
+        self.assertTrue(matching["correct"])
+        self.assertEqual(matching["incorrect_pairs"], [])
+        self.assertEqual(len(matching["feedback"]), 3)
+        self.assertEqual(matching["profile"], {"xp": 275, "energy": 2, "streak": 1})
 
     async def test_first_game_requests_share_one_profile(self):
         onboarding, path = await asyncio.gather(

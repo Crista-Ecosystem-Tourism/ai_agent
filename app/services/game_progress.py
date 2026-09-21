@@ -259,6 +259,7 @@ class GameProgressService:
                 "city_stamp": self._stamp_payload(city_stamp),
                 "lessons": lessons,
                 "drill": self._public_truth_myth_drill(drill.payload) if drill else None,
+                "matching": self._public_matching_drill(drill.payload) if drill else None,
             }
 
     async def answer_moscow_truth_myth(
@@ -274,7 +275,8 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow truth-or-myth drill is not published")
-            statements = content.payload.get("statements")
+            truth_myth = self._truth_myth_payload(content.payload)
+            statements = truth_myth.get("statements")
             if not isinstance(statements, list):
                 raise GameContentUnavailableError("Moscow truth-or-myth drill is invalid")
             statement = next(
@@ -300,6 +302,72 @@ class GameProgressService:
             return {
                 "correct": is_correct,
                 "explanation": statement.get("explanation", "Проверьте источник утверждения."),
+                "profile": self._profile_payload(profile),
+            }
+
+    async def answer_moscow_matching(
+        self, user_id: str, answers: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """Check sandbox matching on the server without changing energy or XP."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            if await self._city_stamp(db, user_id, city) is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            content = await self._published_moscow_sandbox_content(db, city)
+            if content is None:
+                raise GameContentUnavailableError("Moscow matching drill is not published")
+            matching = self._matching_payload(content.payload)
+            pairs = matching.get("pairs") if matching else None
+            choices = matching.get("choices") if matching else None
+            if not isinstance(pairs, list) or not isinstance(choices, list) or len(pairs) != 3:
+                raise GameContentUnavailableError("Moscow matching drill is invalid")
+
+            submitted = {answer.get("pair_id"): answer.get("choice_id") for answer in answers}
+            pair_ids = {pair.get("id") for pair in pairs if isinstance(pair, dict)}
+            choice_ids = {choice.get("id") for choice in choices if isinstance(choice, dict)}
+            if (
+                len(submitted) != 3
+                or None in submitted
+                or set(submitted) != pair_ids
+                or len(set(submitted.values())) != 3
+                or not set(submitted.values()).issubset(choice_ids)
+            ):
+                raise ValueError("All matching pairs must be answered exactly once")
+
+            now = datetime.now(timezone.utc)
+            feedback = []
+            incorrect_pairs = []
+            for pair in pairs:
+                if not isinstance(pair, dict):
+                    raise GameContentUnavailableError("Moscow matching pair is invalid")
+                pair_id = pair.get("id")
+                correct_choice_id = pair.get("correct_choice_id")
+                if not isinstance(pair_id, str) or not isinstance(correct_choice_id, str):
+                    raise GameContentUnavailableError("Moscow matching answer is invalid")
+                is_correct = submitted[pair_id] == correct_choice_id
+                if not is_correct:
+                    incorrect_pairs.append(pair_id)
+                feedback.append({
+                    "pair_id": pair_id,
+                    "correct": is_correct,
+                    "explanation": pair.get("explanation", "Проверьте связь места и даты."),
+                })
+                db.add(GameAttempt(
+                    id=uuid.uuid4().hex,
+                    user_id=user_id,
+                    content_revision_id=content.id,
+                    interaction_key=pair_id,
+                    answer_key=submitted[pair_id],
+                    is_correct=is_correct,
+                    created_at=now,
+                ))
+            await db.commit()
+            return {
+                "correct": not incorrect_pairs,
+                "incorrect_pairs": incorrect_pairs,
+                "feedback": feedback,
                 "profile": self._profile_payload(profile),
             }
 
@@ -777,16 +845,51 @@ class GameProgressService:
 
     @staticmethod
     def _public_truth_myth_drill(payload: dict[str, Any]) -> dict[str, Any]:
-        statements = payload.get("statements")
+        drill = GameProgressService._truth_myth_payload(payload)
+        statements = drill.get("statements")
         if not isinstance(statements, list):
             raise GameContentUnavailableError("Moscow truth-or-myth drill is invalid")
         return {
-            "title": payload.get("title", "Правда или миф"),
-            "intro": payload.get("intro", "Выбери ответ и проверь объяснение."),
+            "title": drill.get("title", "Правда или миф"),
+            "intro": drill.get("intro", "Выбери ответ и проверь объяснение."),
             "statements": [
                 {"id": statement.get("id"), "text": statement.get("text")}
                 for statement in statements
                 if isinstance(statement, dict)
+            ],
+        }
+
+    @staticmethod
+    def _truth_myth_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        nested = payload.get("truth_myth")
+        return nested if isinstance(nested, dict) else payload
+
+    @staticmethod
+    def _matching_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+        matching = payload.get("matching")
+        return matching if isinstance(matching, dict) else None
+
+    @staticmethod
+    def _public_matching_drill(payload: dict[str, Any]) -> dict[str, Any] | None:
+        matching = GameProgressService._matching_payload(payload)
+        if matching is None:
+            return None
+        pairs = matching.get("pairs")
+        choices = matching.get("choices")
+        if not isinstance(pairs, list) or not isinstance(choices, list):
+            raise GameContentUnavailableError("Moscow matching drill is invalid")
+        return {
+            "title": matching.get("title", "Соедини эпохи"),
+            "intro": matching.get("intro", "Сопоставь место и год, затем проверь ответ."),
+            "pairs": [
+                {"id": pair.get("id"), "left": pair.get("left")}
+                for pair in pairs
+                if isinstance(pair, dict)
+            ],
+            "choices": [
+                {"id": choice.get("id"), "label": choice.get("label")}
+                for choice in choices
+                if isinstance(choice, dict)
             ],
         }
 

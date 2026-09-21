@@ -32,6 +32,15 @@ class TruthMythAnswerIn(BaseModel):
     answer_key: str = Field(pattern="^(truth|myth)$")
 
 
+class MatchingAnswerItem(BaseModel):
+    pair_id: str = Field(min_length=1, max_length=120)
+    choice_id: str = Field(min_length=1, max_length=120)
+
+
+class MoscowMatchingAnswerIn(BaseModel):
+    answers: list[MatchingAnswerItem] = Field(min_length=3, max_length=3)
+
+
 @router.get("/onboarding")
 async def get_onboarding(
     user: dict = Depends(get_current_user),
@@ -179,6 +188,30 @@ async def answer_moscow_truth_myth(
         raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
             detail="Упражнение «Правда или миф» временно недоступно",
+        )
+
+
+@router.post("/paths/moscow/sandbox/matching/answer")
+async def answer_moscow_matching(
+    payload: MoscowMatchingAnswerIn,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.answer_moscow_matching(
+            user["sub"], [answer.model_dump() for answer in payload.answers],
+        )
+    except ValueError:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Нужно сопоставить все три карточки")
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши финальный круг Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Упражнение на сопоставление временно недоступно",
         )
 
 
