@@ -268,6 +268,11 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("50 копеек", price_slider["explanation"])
         self.assertEqual(price_slider["profile"], {"xp": 275, "energy": 2, "streak": 1})
 
+        recovery = await self.game.restore_moscow_energy_from_practice(self.user_id)
+        self.assertEqual(recovery["profile"], {"xp": 275, "energy": 3, "streak": 1})
+        self.assertTrue(recovery["practice_recovery"]["used_today"])
+        self.assertFalse(recovery["practice_recovery"]["available"])
+
     async def test_first_game_requests_share_one_profile(self):
         onboarding, path = await asyncio.gather(
             self.game.get_onboarding(self.user_id),

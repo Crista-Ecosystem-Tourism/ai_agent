@@ -28,6 +28,7 @@ class GameProfile(Base, TimestampMixin):
     xp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     energy: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     energy_refreshed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    practice_recovered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     streak: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_activity_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 

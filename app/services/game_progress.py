@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -263,6 +263,7 @@ class GameProgressService:
                 "timeline": self._public_timeline_drill(drill.payload) if drill else None,
                 "word_blocks": self._public_word_blocks_drill(drill.payload) if drill else None,
                 "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
+                "practice_recovery": self._practice_recovery_payload(profile),
             }
 
     async def answer_moscow_truth_myth(
@@ -513,6 +514,56 @@ class GameProgressService:
                 "correct": is_correct,
                 "explanation": price_slider.get("explanation", "Проверьте цену в источнике упражнения."),
                 "profile": self._profile_payload(profile),
+            }
+
+    async def restore_moscow_energy_from_practice(self, user_id: str) -> dict[str, Any]:
+        """Award one daily energy point only after a genuine correct sandbox repeat."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            if await self._city_stamp(db, user_id, city) is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            content = await self._published_moscow_sandbox_content(db, city)
+            if content is None:
+                raise GameContentUnavailableError("Moscow sandbox is not published")
+            today = datetime.now(GAME_TIMEZONE).date()
+            if profile.energy >= DAILY_ENERGY:
+                raise ValueError("Энергия уже полностью восстановлена")
+            if profile.practice_recovered_on == today:
+                raise ValueError("Сегодня энергия за повторение уже восстановлена")
+            practiced = await db.scalar(
+                select(GameAttempt.id).where(
+                    GameAttempt.user_id == user_id,
+                    GameAttempt.content_revision_id == content.id,
+                    GameAttempt.is_correct.is_(True),
+                    GameAttempt.created_at >= datetime.combine(today, datetime.min.time(), tzinfo=GAME_TIMEZONE),
+                ).limit(1)
+            )
+            if practiced is None:
+                raise ValueError("Сначала правильно заверши любое упражнение в песочнице")
+            new_energy = await db.scalar(
+                update(GameProfile)
+                .where(
+                    GameProfile.user_id == user_id,
+                    GameProfile.energy < DAILY_ENERGY,
+                    GameProfile.practice_recovered_on.is_distinct_from(today),
+                )
+                .values(
+                    energy=GameProfile.energy + 1,
+                    practice_recovered_on=today,
+                    updated_at=datetime.now(timezone.utc),
+                )
+                .returning(GameProfile.energy)
+            )
+            if new_energy is None:
+                raise ValueError("Сегодня энергия за повторение уже восстановлена")
+            profile.energy = new_energy
+            profile.practice_recovered_on = today
+            await db.commit()
+            return {
+                "profile": self._profile_payload(profile),
+                "practice_recovery": self._practice_recovery_payload(profile),
             }
 
     async def answer_moscow_boss(
@@ -1112,6 +1163,15 @@ class GameProgressService:
     @staticmethod
     def _profile_payload(profile: GameProfile) -> dict[str, Any]:
         return {"xp": profile.xp, "energy": profile.energy, "streak": profile.streak}
+
+    @staticmethod
+    def _practice_recovery_payload(profile: GameProfile) -> dict[str, Any]:
+        today = datetime.now(GAME_TIMEZONE).date()
+        return {
+            "available": profile.energy < DAILY_ENERGY and profile.practice_recovered_on != today,
+            "used_today": profile.practice_recovered_on == today,
+            "amount": 1,
+        }
 
     @staticmethod
     def _quest_payload(quest: GameQuest) -> dict[str, Any]:

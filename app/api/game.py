@@ -293,6 +293,27 @@ async def answer_moscow_price_slider(
         )
 
 
+@router.post("/paths/moscow/sandbox/restore-energy")
+async def restore_moscow_energy(
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.restore_moscow_energy_from_practice(user["sub"])
+    except ValueError as error:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(error))
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши финальный круг Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Песочница Москвы временно недоступна",
+        )
+
+
 @router.post("/paths/moscow/boss/answer")
 async def answer_moscow_boss(
     payload: MoscowBossAnswerIn,
