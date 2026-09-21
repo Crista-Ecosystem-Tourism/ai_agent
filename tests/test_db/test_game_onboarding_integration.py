@@ -3,13 +3,14 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 # Register all relationship targets before configuring SQLAlchemy mappers.
 from app.db.models import chat  # noqa: F401
 from app.db.models.auth import User
 from app.services.game_progress import GameProgressService, GameQuestLockedError
+from app.services.wiki import WikiNotFoundError, WikiService
 from app.db.dsn import get_database_url
 
 
@@ -32,6 +33,7 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ))
             await db.commit()
         self.game = GameProgressService(self.sessions)
+        self.wiki = WikiService(self.sessions)
 
     async def asyncTearDown(self):
         await self.engine.dispose()
@@ -280,3 +282,26 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(onboarding["profile"], {"xp": 0, "energy": 5, "streak": 0})
         self.assertEqual(path["profile"], onboarding["profile"])
+
+    async def test_wiki_draft_is_private_until_editorial_publish(self):
+        draft = await self.wiki.create_draft(
+            self.user_id,
+            "moscow-test",
+            "Москва: тестовый черновик",
+            {"blocks": [{"type": "paragraph", "text": "Проверяемый текст."}]},
+            [{"label": "Официальный источник", "url": "https://example.test/source"}],
+            "CC BY 4.0",
+        )
+        self.assertEqual(draft["status"], "draft")
+        with self.assertRaises(WikiNotFoundError):
+            await self.wiki.get_published("moscow-test")
+        review = await self.wiki.submit_for_review(self.user_id, draft["id"])
+        self.assertEqual(review["status"], "review")
+        with self.assertRaises(WikiNotFoundError):
+            await self.wiki.get_published("moscow-test")
+        async with self.sessions() as db:
+            await db.execute(update(User).where(User.id == self.user_id).values(is_editor=True))
+            await db.commit()
+        published = await self.wiki.publish_reviewed(self.user_id, draft["id"])
+        self.assertEqual(published["title"], "Москва: тестовый черновик")
+        self.assertEqual((await self.wiki.get_published("moscow-test"))["license"], "CC BY 4.0")

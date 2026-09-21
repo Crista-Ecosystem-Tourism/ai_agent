@@ -12,6 +12,7 @@ from app.services.chat_session import ChatSessionService
 from app.services.user import UserService
 from app.services.saved_route import SavedRouteService
 from app.services.game_progress import GameProgressService
+from app.services.wiki import WikiService
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -30,6 +31,7 @@ _chat_session_service: ChatSessionService | None = None
 _user_service: UserService | None = None
 _saved_route_service: SavedRouteService | None = None
 _game_progress_service: GameProgressService | None = None
+_wiki_service: WikiService | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -76,7 +78,7 @@ def get_runtime_status() -> dict[str, object]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
-    global _history_service, _chat_session_service, _user_service, _saved_route_service, _game_progress_service
+    global _history_service, _chat_session_service, _user_service, _saved_route_service, _game_progress_service, _wiki_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
     global _ai_available, _ai_unavailable_reason
 
@@ -97,6 +99,7 @@ async def lifespan(app: FastAPI):
     _user_service = UserService(_session_factory)
     _saved_route_service = SavedRouteService(_session_factory)
     _game_progress_service = GameProgressService(_session_factory)
+    _wiki_service = WikiService(_session_factory)
 
     api_key = _configured_openrouter_key()
     if api_key is None:
@@ -138,6 +141,7 @@ async def lifespan(app: FastAPI):
         _user_service = None
         _saved_route_service = None
         _game_progress_service = None
+        _wiki_service = None
         _llm_model = None
         _preferences_agent = None
         _search_agent = None
@@ -171,6 +175,10 @@ def get_saved_route_service() -> SavedRouteService:
 
 def get_game_progress_service() -> GameProgressService:
     return _game_progress_service
+
+
+def get_wiki_service() -> WikiService:
+    return _wiki_service
 
 def get_message_processor() -> MessageProcessor:
     if _message_processor is None:
