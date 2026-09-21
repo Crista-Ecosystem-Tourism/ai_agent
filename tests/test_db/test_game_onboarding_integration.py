@@ -233,6 +233,8 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("expected_order", sandbox["word_blocks"])
         self.assertEqual(sandbox["price_slider"]["fact_date"], "15 мая 1935 года")
         self.assertNotIn("target", sandbox["price_slider"])
+        self.assertEqual(sandbox["story"]["title"], "Сцена: Красная площадь")
+        self.assertIn("иллюстрация", sandbox["story"]["media_credit"].lower())
 
         truth_myth = await self.game.answer_moscow_truth_myth(
             self.user_id, "zaryadye-2017", "truth",

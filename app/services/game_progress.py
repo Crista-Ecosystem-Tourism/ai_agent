@@ -263,6 +263,7 @@ class GameProgressService:
                 "timeline": self._public_timeline_drill(drill.payload) if drill else None,
                 "word_blocks": self._public_word_blocks_drill(drill.payload) if drill else None,
                 "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
+                "story": self._public_story_card(drill.payload) if drill else None,
                 "practice_recovery": self._practice_recovery_payload(profile),
             }
 
@@ -1158,6 +1159,26 @@ class GameProgressService:
             "min": minimum,
             "max": maximum,
             "step": step,
+        }
+
+    @staticmethod
+    def _public_story_card(payload: dict[str, Any]) -> dict[str, Any] | None:
+        story = payload.get("story")
+        if not isinstance(story, dict):
+            return None
+        required = ("title", "image_url", "image_alt", "fact", "source_url")
+        if not all(isinstance(story.get(key), str) and story[key].strip() for key in required):
+            raise GameContentUnavailableError("Moscow Story card is invalid")
+        return {
+            "title": story["title"],
+            "eyebrow": story.get("eyebrow", "Story"),
+            "image_url": story["image_url"],
+            "image_alt": story["image_alt"],
+            "media_credit": story.get("media_credit", "Иллюстрация Crista"),
+            "fact": story["fact"],
+            "source_label": story.get("source_label", "Открыть источник"),
+            "source_url": story["source_url"],
+            "note": story.get("note", "Проверьте факт по первоисточнику."),
         }
 
     @staticmethod
