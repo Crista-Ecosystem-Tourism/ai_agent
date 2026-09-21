@@ -261,6 +261,7 @@ class GameProgressService:
                 "drill": self._public_truth_myth_drill(drill.payload) if drill else None,
                 "matching": self._public_matching_drill(drill.payload) if drill else None,
                 "timeline": self._public_timeline_drill(drill.payload) if drill else None,
+                "word_blocks": self._public_word_blocks_drill(drill.payload) if drill else None,
             }
 
     async def answer_moscow_truth_myth(
@@ -426,6 +427,48 @@ class GameProgressService:
                 "correct": is_correct,
                 "expected_order": expected_ids if is_correct else None,
                 "feedback": feedback,
+                "profile": self._profile_payload(profile),
+            }
+
+    async def answer_moscow_word_blocks(
+        self, user_id: str, ordered_ids: list[str],
+    ) -> dict[str, Any]:
+        """Check a sandbox word-order exercise without spending energy or XP."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            if await self._city_stamp(db, user_id, city) is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            content = await self._published_moscow_sandbox_content(db, city)
+            if content is None:
+                raise GameContentUnavailableError("Moscow word-blocks drill is not published")
+            word_blocks = self._word_blocks_payload(content.payload)
+            blocks = word_blocks.get("blocks") if word_blocks else None
+            expected_order = word_blocks.get("expected_order") if word_blocks else None
+            if not isinstance(blocks, list) or not isinstance(expected_order, list) or len(blocks) != 4:
+                raise GameContentUnavailableError("Moscow word-blocks drill is invalid")
+            block_ids = [block.get("id") for block in blocks if isinstance(block, dict)]
+            if len(block_ids) != 4 or len(set(expected_order)) != 4 or set(expected_order) != set(block_ids):
+                raise GameContentUnavailableError("Moscow word-blocks answer is invalid")
+            if len(set(ordered_ids)) != 4 or set(ordered_ids) != set(block_ids):
+                raise ValueError("All word blocks must be ordered exactly once")
+            is_correct = ordered_ids == expected_order
+            now = datetime.now(timezone.utc)
+            for position, block_id in enumerate(ordered_ids, start=1):
+                db.add(GameAttempt(
+                    id=uuid.uuid4().hex,
+                    user_id=user_id,
+                    content_revision_id=content.id,
+                    interaction_key=block_id,
+                    answer_key=str(position),
+                    is_correct=block_id == expected_order[position - 1],
+                    created_at=now,
+                ))
+            await db.commit()
+            return {
+                "correct": is_correct,
+                "explanation": word_blocks.get("explanation", "Проверьте порядок слов и повторите попытку."),
                 "profile": self._profile_payload(profile),
             }
 
@@ -971,6 +1014,29 @@ class GameProgressService:
                 {"id": item.get("id"), "label": item.get("label")}
                 for item in items
                 if isinstance(item, dict)
+            ],
+        }
+
+    @staticmethod
+    def _word_blocks_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+        word_blocks = payload.get("word_blocks")
+        return word_blocks if isinstance(word_blocks, dict) else None
+
+    @staticmethod
+    def _public_word_blocks_drill(payload: dict[str, Any]) -> dict[str, Any] | None:
+        word_blocks = GameProgressService._word_blocks_payload(payload)
+        if word_blocks is None:
+            return None
+        blocks = word_blocks.get("blocks")
+        if not isinstance(blocks, list):
+            raise GameContentUnavailableError("Moscow word-blocks drill is invalid")
+        return {
+            "title": word_blocks.get("title", "Собери фразу"),
+            "intro": word_blocks.get("intro", "Расставь слова в правильном порядке."),
+            "blocks": [
+                {"id": block.get("id"), "label": block.get("label")}
+                for block in blocks
+                if isinstance(block, dict)
             ],
         }
 
