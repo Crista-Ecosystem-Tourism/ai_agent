@@ -273,6 +273,7 @@ class GameProgressService:
                 "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
                 "story": self._public_story_card(drill.payload) if drill else None,
                 "photo_scanner": self._public_photo_scanner_drill(drill.payload) if drill else None,
+                "wiki_reference": self._public_wiki_reference(drill.payload) if drill else None,
                 "practice_recovery": self._practice_recovery_payload(profile),
             }
 
@@ -1261,6 +1262,16 @@ class GameProgressService:
             "field_note": scanner.get("field_note", "Это экранное упражнение, а не AR-навигация."),
             "hotspots": public_hotspots,
         }
+
+    @staticmethod
+    def _public_wiki_reference(payload: dict[str, Any]) -> dict[str, str] | None:
+        reference = payload.get("wiki_reference")
+        if not isinstance(reference, dict):
+            return None
+        slug, version_id = reference.get("slug"), reference.get("version_id")
+        if not isinstance(slug, str) or not isinstance(version_id, str) or not slug or not version_id:
+            raise GameContentUnavailableError("Moscow sandbox Wiki reference is invalid")
+        return {"slug": slug, "version_id": version_id}
 
     @staticmethod
     def _profile_payload(profile: GameProfile) -> dict[str, Any]:

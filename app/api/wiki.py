@@ -43,6 +43,14 @@ async def get_wiki_article(slug: str, wiki: WikiService = Depends(get_wiki_servi
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Опубликованная статья не найдена")
 
 
+@router.get("/versions/{version_id}")
+async def get_wiki_version(version_id: str, wiki: WikiService = Depends(get_wiki_service)):
+    try:
+        return await wiki.get_published_version(version_id)
+    except WikiNotFoundError:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Опубликованная версия не найдена")
+
+
 @router.post("/drafts")
 async def create_wiki_draft(
     payload: WikiDraftIn,

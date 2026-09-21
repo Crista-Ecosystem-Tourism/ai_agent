@@ -235,6 +235,7 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("target", sandbox["price_slider"])
         self.assertEqual(sandbox["story"]["title"], "Сцена: Красная площадь")
         self.assertIn("иллюстрация", sandbox["story"]["media_credit"].lower())
+        self.assertEqual(sandbox["wiki_reference"], {"slug": "moscow", "version_id": "wiki-moscow-v1"})
         self.assertEqual(sandbox["photo_scanner"]["title"], "Фото-сканер: Кремлёвская стена")
         self.assertEqual(len(sandbox["photo_scanner"]["hotspots"]), 3)
         self.assertNotIn("correct_hotspot_id", sandbox["photo_scanner"])
@@ -327,6 +328,7 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         moscow = await self.wiki.get_published("moscow")
         self.assertEqual(moscow["title"], "Москва")
         self.assertEqual(len(moscow["sources"]), 2)
+        self.assertEqual((await self.wiki.get_published_version(moscow["version_id"]))["slug"], "moscow")
         draft = await self.wiki.create_draft(
             self.user_id,
             slug,

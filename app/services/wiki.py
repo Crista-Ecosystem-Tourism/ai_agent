@@ -29,6 +29,16 @@ class WikiService:
                 raise WikiNotFoundError(slug)
             return self._public_version(article, version)
 
+    async def get_published_version(self, version_id: str) -> dict[str, Any]:
+        async with self.session_factory() as db:
+            version = await db.get(WikiArticleVersion, version_id)
+            if version is None or version.status != "published":
+                raise WikiNotFoundError(version_id)
+            article = await db.get(WikiArticle, version.article_id)
+            if article is None:
+                raise WikiNotFoundError(version_id)
+            return self._public_version(article, version)
+
     async def list_authored(self, user_id: str) -> list[dict[str, Any]]:
         async with self.session_factory() as db:
             rows = (await db.execute(
@@ -118,6 +128,7 @@ class WikiService:
     @staticmethod
     def _public_version(article: WikiArticle, version: WikiArticleVersion) -> dict[str, Any]:
         return {
+            "version_id": version.id,
             "slug": article.slug,
             "title": version.title,
             "body": version.body,
