@@ -66,6 +66,7 @@ def get_runtime_status() -> dict[str, object]:
         _user_service is not None,
         _saved_route_service is not None,
         _game_progress_service is not None,
+        _wiki_service is not None,
     ))
     return {
         "core_ready": core_ready,
