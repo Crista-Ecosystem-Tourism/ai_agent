@@ -262,6 +262,7 @@ class GameProgressService:
                 "matching": self._public_matching_drill(drill.payload) if drill else None,
                 "timeline": self._public_timeline_drill(drill.payload) if drill else None,
                 "word_blocks": self._public_word_blocks_drill(drill.payload) if drill else None,
+                "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
             }
 
     async def answer_moscow_truth_myth(
@@ -469,6 +470,48 @@ class GameProgressService:
             return {
                 "correct": is_correct,
                 "explanation": word_blocks.get("explanation", "Проверьте порядок слов и повторите попытку."),
+                "profile": self._profile_payload(profile),
+            }
+
+    async def answer_moscow_price_slider(self, user_id: str, value: int) -> dict[str, Any]:
+        """Check a historic-price estimate without changing sandbox rewards or energy."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            if await self._city_stamp(db, user_id, city) is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            content = await self._published_moscow_sandbox_content(db, city)
+            if content is None:
+                raise GameContentUnavailableError("Moscow price-slider drill is not published")
+            price_slider = self._price_slider_payload(content.payload)
+            if price_slider is None:
+                raise GameContentUnavailableError("Moscow price-slider drill is invalid")
+            minimum = price_slider.get("min")
+            maximum = price_slider.get("max")
+            target = price_slider.get("target")
+            tolerance = price_slider.get("tolerance")
+            if not all(isinstance(item, int) for item in (minimum, maximum, target, tolerance)):
+                raise GameContentUnavailableError("Moscow price-slider answer is invalid")
+            if minimum > maximum or target < minimum or target > maximum or tolerance < 0:
+                raise GameContentUnavailableError("Moscow price-slider answer is invalid")
+            if value < minimum or value > maximum:
+                raise ValueError("Price estimate is outside the configured range")
+            is_correct = abs(value - target) <= tolerance
+            now = datetime.now(timezone.utc)
+            db.add(GameAttempt(
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                content_revision_id=content.id,
+                interaction_key="price-slider",
+                answer_key=str(value),
+                is_correct=is_correct,
+                created_at=now,
+            ))
+            await db.commit()
+            return {
+                "correct": is_correct,
+                "explanation": price_slider.get("explanation", "Проверьте цену в источнике упражнения."),
                 "profile": self._profile_payload(profile),
             }
 
@@ -1038,6 +1081,32 @@ class GameProgressService:
                 for block in blocks
                 if isinstance(block, dict)
             ],
+        }
+
+    @staticmethod
+    def _price_slider_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+        price_slider = payload.get("price_slider")
+        return price_slider if isinstance(price_slider, dict) else None
+
+    @staticmethod
+    def _public_price_slider_drill(payload: dict[str, Any]) -> dict[str, Any] | None:
+        price_slider = GameProgressService._price_slider_payload(payload)
+        if price_slider is None:
+            return None
+        minimum = price_slider.get("min")
+        maximum = price_slider.get("max")
+        step = price_slider.get("step")
+        if not all(isinstance(item, int) for item in (minimum, maximum, step)) or minimum >= maximum or step <= 0:
+            raise GameContentUnavailableError("Moscow price-slider drill is invalid")
+        return {
+            "title": price_slider.get("title", "Угадай цену"),
+            "intro": price_slider.get("intro", "Выбери оценку и проверь ответ."),
+            "question": price_slider.get("question", "Какой была цена?"),
+            "fact_date": price_slider.get("fact_date"),
+            "unit": price_slider.get("unit", "₽"),
+            "min": minimum,
+            "max": maximum,
+            "step": step,
         }
 
     @staticmethod

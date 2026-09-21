@@ -229,6 +229,8 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sandbox["word_blocks"]["title"], "Собери фразу")
         self.assertEqual(len(sandbox["word_blocks"]["blocks"]), 4)
         self.assertNotIn("expected_order", sandbox["word_blocks"])
+        self.assertEqual(sandbox["price_slider"]["fact_date"], "15 мая 1935 года")
+        self.assertNotIn("target", sandbox["price_slider"])
 
         truth_myth = await self.game.answer_moscow_truth_myth(
             self.user_id, "zaryadye-2017", "truth",
@@ -260,6 +262,11 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(word_blocks["correct"])
         self.assertIn("Москва", word_blocks["explanation"])
         self.assertEqual(word_blocks["profile"], {"xp": 275, "energy": 2, "streak": 1})
+
+        price_slider = await self.game.answer_moscow_price_slider(self.user_id, 50)
+        self.assertTrue(price_slider["correct"])
+        self.assertIn("50 копеек", price_slider["explanation"])
+        self.assertEqual(price_slider["profile"], {"xp": 275, "energy": 2, "streak": 1})
 
     async def test_first_game_requests_share_one_profile(self):
         onboarding, path = await asyncio.gather(
