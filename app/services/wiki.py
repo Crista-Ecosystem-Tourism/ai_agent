@@ -39,6 +39,19 @@ class WikiService:
             )).all()
             return [self._author_version(article, version) for article, version in rows]
 
+    async def list_review_queue(self, editor_id: str) -> list[dict[str, Any]]:
+        async with self.session_factory() as db:
+            editor = await db.get(User, editor_id)
+            if editor is None or not editor.is_editor:
+                raise PermissionError("Требуется роль редактора Wiki")
+            rows = (await db.execute(
+                select(WikiArticle, WikiArticleVersion)
+                .join(WikiArticleVersion, WikiArticleVersion.article_id == WikiArticle.id)
+                .where(WikiArticleVersion.status == "review")
+                .order_by(WikiArticleVersion.updated_at.asc())
+            )).all()
+            return [self._author_version(article, version) for article, version in rows]
+
     async def create_draft(
         self, user_id: str, slug: str, title: str, body: dict[str, Any], sources: list[dict[str, str]], license_name: str,
     ) -> dict[str, Any]:

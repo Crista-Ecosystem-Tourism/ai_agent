@@ -85,3 +85,14 @@ async def publish_wiki_version(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Версия не найдена")
     except ValueError as error:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(error))
+
+
+@router.get("/review")
+async def get_wiki_review_queue(
+    user: dict = Depends(get_current_user),
+    wiki: WikiService = Depends(get_wiki_service),
+):
+    try:
+        return await wiki.list_review_queue(user["sub"])
+    except PermissionError as error:
+        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=str(error))

@@ -342,11 +342,14 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         review = await self.wiki.submit_for_review(self.user_id, draft["id"])
         self.assertEqual(review["status"], "review")
         self.assertEqual((await self.wiki.list_authored(self.user_id))[0]["status"], "review")
+        with self.assertRaises(PermissionError):
+            await self.wiki.list_review_queue(self.user_id)
         with self.assertRaises(WikiNotFoundError):
             await self.wiki.get_published(slug)
         async with self.sessions() as db:
             await db.execute(update(User).where(User.id == self.user_id).values(is_editor=True))
             await db.commit()
+        self.assertEqual((await self.wiki.list_review_queue(self.user_id))[0]["id"], draft["id"])
         published = await self.wiki.publish_reviewed(self.user_id, draft["id"])
         self.assertEqual(published["title"], "Москва: тестовый черновик")
         self.assertEqual((await self.wiki.get_published(slug))["license"], "CC BY 4.0")
