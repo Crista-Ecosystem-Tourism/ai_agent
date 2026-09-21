@@ -285,13 +285,44 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(onboarding["profile"], {"xp": 0, "energy": 5, "streak": 0})
         self.assertEqual(path["profile"], onboarding["profile"])
 
+    async def test_moscow_day_boundary_refreshes_energy_and_resets_broken_streak(self):
+        clock = [datetime(2026, 9, 1, 20, 59, tzinfo=timezone.utc)]  # 23:59 in Moscow
+        game = GameProgressService(self.sessions, now=lambda: clock[0])
+
+        self.assertEqual((await game.get_onboarding(self.user_id))["profile"]["energy"], 5)
+        self.assertFalse((await game.answer_red_square(self.user_id, "color"))["correct"])
+        day_one = await game.answer_red_square(self.user_id, "beautiful")
+        self.assertEqual(day_one["profile"], {"xp": 50, "energy": 4, "streak": 1})
+
+        clock[0] = datetime(2026, 9, 1, 21, 1, tzinfo=timezone.utc)  # 00:01 in Moscow
+        next_moscow_day = await game.get_onboarding(self.user_id)
+        self.assertEqual(next_moscow_day["profile"], {"xp": 50, "energy": 5, "streak": 1})
+        self.assertEqual(next_moscow_day["daily"]["completed_quests"], 0)
+
+        self.assertFalse((await game.answer_moscow_quest(
+            self.user_id, "moscow-spasskaya-tower", "1547",
+        ))["correct"])
+        consecutive_day = await game.answer_moscow_quest(
+            self.user_id, "moscow-spasskaya-tower", "1491",
+        )
+        self.assertEqual(consecutive_day["profile"], {"xp": 75, "energy": 4, "streak": 2})
+        self.assertEqual(consecutive_day["daily"]["completed_quests"], 1)
+
+        clock[0] = datetime(2026, 9, 4, 9, tzinfo=timezone.utc)  # Moscow day 4: day 3 was skipped
+        skipped_day = await game.get_onboarding(self.user_id)
+        self.assertEqual(skipped_day["profile"], {"xp": 75, "energy": 5, "streak": 2})
+        reset_streak = await game.answer_moscow_quest(self.user_id, "moscow-tsar-bell", "1735")
+        self.assertEqual(reset_streak["profile"], {"xp": 100, "energy": 5, "streak": 1})
+        self.assertEqual(reset_streak["daily"]["completed_quests"], 1)
+
     async def test_wiki_draft_is_private_until_editorial_publish(self):
+        slug = f"moscow-test-{self.user_id[:8]}"
         moscow = await self.wiki.get_published("moscow")
         self.assertEqual(moscow["title"], "Москва")
         self.assertEqual(len(moscow["sources"]), 2)
         draft = await self.wiki.create_draft(
             self.user_id,
-            "moscow-test",
+            slug,
             "Москва: тестовый черновик",
             {"blocks": [{"type": "paragraph", "text": "Проверяемый текст."}]},
             [{"label": "Официальный источник", "url": "https://example.test/source"}],
@@ -299,14 +330,14 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(draft["status"], "draft")
         with self.assertRaises(WikiNotFoundError):
-            await self.wiki.get_published("moscow-test")
+            await self.wiki.get_published(slug)
         review = await self.wiki.submit_for_review(self.user_id, draft["id"])
         self.assertEqual(review["status"], "review")
         with self.assertRaises(WikiNotFoundError):
-            await self.wiki.get_published("moscow-test")
+            await self.wiki.get_published(slug)
         async with self.sessions() as db:
             await db.execute(update(User).where(User.id == self.user_id).values(is_editor=True))
             await db.commit()
         published = await self.wiki.publish_reviewed(self.user_id, draft["id"])
         self.assertEqual(published["title"], "Москва: тестовый черновик")
-        self.assertEqual((await self.wiki.get_published("moscow-test"))["license"], "CC BY 4.0")
+        self.assertEqual((await self.wiki.get_published(slug))["license"], "CC BY 4.0")

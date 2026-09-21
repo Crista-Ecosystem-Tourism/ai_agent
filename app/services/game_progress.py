@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, update
@@ -42,8 +42,16 @@ class GameQuestLockedError(RuntimeError):
 
 
 class GameProgressService:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        now: Callable[[], datetime] | None = None,
+    ):
         self.session_factory = session_factory
+        self._now = now or (lambda: datetime.now(timezone.utc))
+
+    def _today(self) -> date:
+        return self._now().astimezone(GAME_TIMEZONE).date()
 
     async def get_onboarding(self, user_id: str) -> dict[str, Any]:
         async with self.session_factory() as db:
@@ -71,7 +79,7 @@ class GameProgressService:
                 raise ValueError("Unknown answer option")
 
             is_correct = answer_key == question.get("correct_option_id")
-            now = datetime.now(timezone.utc)
+            now = self._now()
             db.add(GameAttempt(
                 id=uuid.uuid4().hex,
                 user_id=user_id,
@@ -293,7 +301,7 @@ class GameProgressService:
             if correct_answer not in {"truth", "myth"}:
                 raise GameContentUnavailableError("Moscow truth-or-myth answer is invalid")
             is_correct = answer_key == correct_answer
-            now = datetime.now(timezone.utc)
+            now = self._now()
             db.add(GameAttempt(
                 id=uuid.uuid4().hex,
                 user_id=user_id,
@@ -341,7 +349,7 @@ class GameProgressService:
             ):
                 raise ValueError("All matching pairs must be answered exactly once")
 
-            now = datetime.now(timezone.utc)
+            now = self._now()
             feedback = []
             incorrect_pairs = []
             for pair in pairs:
@@ -404,7 +412,7 @@ class GameProgressService:
             if any(not isinstance(item_id, str) for item_id in expected_ids):
                 raise GameContentUnavailableError("Moscow timeline answer is invalid")
             is_correct = ordered_ids == expected_ids
-            now = datetime.now(timezone.utc)
+            now = self._now()
             item_by_id = {item.get("id"): item for item in items if isinstance(item, dict)}
             feedback = []
             for position, item_id in enumerate(ordered_ids, start=1):
@@ -457,7 +465,7 @@ class GameProgressService:
             if len(set(ordered_ids)) != 4 or set(ordered_ids) != set(block_ids):
                 raise ValueError("All word blocks must be ordered exactly once")
             is_correct = ordered_ids == expected_order
-            now = datetime.now(timezone.utc)
+            now = self._now()
             for position, block_id in enumerate(ordered_ids, start=1):
                 db.add(GameAttempt(
                     id=uuid.uuid4().hex,
@@ -500,7 +508,7 @@ class GameProgressService:
             if value < minimum or value > maximum:
                 raise ValueError("Price estimate is outside the configured range")
             is_correct = abs(value - target) <= tolerance
-            now = datetime.now(timezone.utc)
+            now = self._now()
             db.add(GameAttempt(
                 id=uuid.uuid4().hex,
                 user_id=user_id,
@@ -528,7 +536,7 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow sandbox is not published")
-            today = datetime.now(GAME_TIMEZONE).date()
+            today = self._today()
             if profile.energy >= DAILY_ENERGY:
                 raise ValueError("Энергия уже полностью восстановлена")
             if profile.practice_recovered_on == today:
@@ -553,7 +561,7 @@ class GameProgressService:
                 .values(
                     energy=GameProfile.energy + 1,
                     practice_recovered_on=today,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=self._now(),
                 )
                 .returning(GameProfile.energy)
             )
@@ -589,7 +597,7 @@ class GameProgressService:
             ):
                 raise ValueError("All boss questions must be answered exactly once")
 
-            now = datetime.now(timezone.utc)
+            now = self._now()
             incorrect_answers = 0
             feedback = []
             for question in questions:
@@ -687,7 +695,7 @@ class GameProgressService:
                 raise ValueError("Unknown answer option")
 
             is_correct = answer_key == question.get("correct_option_id")
-            now = datetime.now(timezone.utc)
+            now = self._now()
             db.add(GameAttempt(
                 id=uuid.uuid4().hex,
                 user_id=user_id,
@@ -747,7 +755,7 @@ class GameProgressService:
             }
 
     async def _ensure_profile(self, db: AsyncSession, user_id: str) -> GameProfile:
-        today = datetime.now(GAME_TIMEZONE).date()
+        today = self._today()
         profile = await db.get(GameProfile, user_id)
         if profile is None:
             # On the first page load the onboarding and path requests may run
@@ -770,7 +778,7 @@ class GameProgressService:
         elif profile.energy_refreshed_on < today:
             profile.energy = DAILY_ENERGY
             profile.energy_refreshed_on = today
-            profile.updated_at = datetime.now(timezone.utc)
+            profile.updated_at = self._now()
         return profile
 
     @staticmethod
@@ -822,11 +830,10 @@ class GameProgressService:
         if daily.completed_quests >= DAILY_GOAL_QUESTS and daily.goal_reached_at is None:
             daily.goal_reached_at = completed_at
 
-    @staticmethod
     async def _daily_payload(
-        db: AsyncSession, user_id: str, profile: GameProfile,
+        self, db: AsyncSession, user_id: str, profile: GameProfile,
     ) -> dict[str, Any]:
-        today = datetime.now(GAME_TIMEZONE).date()
+        today = self._today()
         daily = await db.get(GameDailyProgress, (user_id, today))
         completed = daily.completed_quests if daily is not None else 0
         return {
@@ -1185,9 +1192,8 @@ class GameProgressService:
     def _profile_payload(profile: GameProfile) -> dict[str, Any]:
         return {"xp": profile.xp, "energy": profile.energy, "streak": profile.streak}
 
-    @staticmethod
-    def _practice_recovery_payload(profile: GameProfile) -> dict[str, Any]:
-        today = datetime.now(GAME_TIMEZONE).date()
+    def _practice_recovery_payload(self, profile: GameProfile) -> dict[str, Any]:
+        today = self._today()
         return {
             "available": profile.energy < DAILY_ENERGY and profile.practice_recovered_on != today,
             "used_today": profile.practice_recovered_on == today,
