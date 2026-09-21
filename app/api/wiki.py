@@ -27,6 +27,14 @@ class WikiDraftIn(BaseModel):
     license: str = Field(min_length=1, max_length=160)
 
 
+@router.get("/drafts/mine")
+async def get_my_wiki_drafts(
+    user: dict = Depends(get_current_user),
+    wiki: WikiService = Depends(get_wiki_service),
+):
+    return await wiki.list_authored(user["sub"])
+
+
 @router.get("/articles/{slug}")
 async def get_wiki_article(slug: str, wiki: WikiService = Depends(get_wiki_service)):
     try:

@@ -336,10 +336,12 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             "CC BY 4.0",
         )
         self.assertEqual(draft["status"], "draft")
+        self.assertEqual([item["id"] for item in await self.wiki.list_authored(self.user_id)], [draft["id"]])
         with self.assertRaises(WikiNotFoundError):
             await self.wiki.get_published(slug)
         review = await self.wiki.submit_for_review(self.user_id, draft["id"])
         self.assertEqual(review["status"], "review")
+        self.assertEqual((await self.wiki.list_authored(self.user_id))[0]["status"], "review")
         with self.assertRaises(WikiNotFoundError):
             await self.wiki.get_published(slug)
         async with self.sessions() as db:

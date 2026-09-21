@@ -29,6 +29,16 @@ class WikiService:
                 raise WikiNotFoundError(slug)
             return self._public_version(article, version)
 
+    async def list_authored(self, user_id: str) -> list[dict[str, Any]]:
+        async with self.session_factory() as db:
+            rows = (await db.execute(
+                select(WikiArticle, WikiArticleVersion)
+                .join(WikiArticleVersion, WikiArticleVersion.article_id == WikiArticle.id)
+                .where(WikiArticleVersion.author_id == user_id)
+                .order_by(WikiArticleVersion.updated_at.desc())
+            )).all()
+            return [self._author_version(article, version) for article, version in rows]
+
     async def create_draft(
         self, user_id: str, slug: str, title: str, body: dict[str, Any], sources: list[dict[str, str]], license_name: str,
     ) -> dict[str, Any]:
