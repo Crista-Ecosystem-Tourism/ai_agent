@@ -223,6 +223,9 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sandbox["matching"]["title"], "Соедини эпохи")
         self.assertEqual(len(sandbox["matching"]["pairs"]), 3)
         self.assertNotIn("correct_choice_id", sandbox["matching"]["pairs"][0])
+        self.assertEqual(sandbox["timeline"]["title"], "Собери хронологию")
+        self.assertEqual(len(sandbox["timeline"]["items"]), 3)
+        self.assertNotIn("correct_position", sandbox["timeline"]["items"][0])
 
         truth_myth = await self.game.answer_moscow_truth_myth(
             self.user_id, "zaryadye-2017", "truth",
@@ -240,6 +243,13 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(matching["incorrect_pairs"], [])
         self.assertEqual(len(matching["feedback"]), 3)
         self.assertEqual(matching["profile"], {"xp": 275, "energy": 2, "streak": 1})
+
+        timeline = await self.game.answer_moscow_timeline(self.user_id, [
+            "gum-1893", "metro-1935", "vdnh-1939",
+        ])
+        self.assertTrue(timeline["correct"])
+        self.assertEqual(len(timeline["feedback"]), 3)
+        self.assertEqual(timeline["profile"], {"xp": 275, "energy": 2, "streak": 1})
 
     async def test_first_game_requests_share_one_profile(self):
         onboarding, path = await asyncio.gather(

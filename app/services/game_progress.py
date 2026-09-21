@@ -260,6 +260,7 @@ class GameProgressService:
                 "lessons": lessons,
                 "drill": self._public_truth_myth_drill(drill.payload) if drill else None,
                 "matching": self._public_matching_drill(drill.payload) if drill else None,
+                "timeline": self._public_timeline_drill(drill.payload) if drill else None,
             }
 
     async def answer_moscow_truth_myth(
@@ -367,6 +368,63 @@ class GameProgressService:
             return {
                 "correct": not incorrect_pairs,
                 "incorrect_pairs": incorrect_pairs,
+                "feedback": feedback,
+                "profile": self._profile_payload(profile),
+            }
+
+    async def answer_moscow_timeline(
+        self, user_id: str, ordered_ids: list[str],
+    ) -> dict[str, Any]:
+        """Check a sandbox chronology without spending energy or awarding XP."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            if await self._city_stamp(db, user_id, city) is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            content = await self._published_moscow_sandbox_content(db, city)
+            if content is None:
+                raise GameContentUnavailableError("Moscow timeline drill is not published")
+            timeline = self._timeline_payload(content.payload)
+            items = timeline.get("items") if timeline else None
+            if not isinstance(items, list) or len(items) != 3:
+                raise GameContentUnavailableError("Moscow timeline drill is invalid")
+            item_ids = [item.get("id") for item in items if isinstance(item, dict)]
+            if len(item_ids) != 3 or len(set(ordered_ids)) != 3 or set(ordered_ids) != set(item_ids):
+                raise ValueError("All timeline events must be ordered exactly once")
+            ordered_items = sorted(
+                items,
+                key=lambda item: item.get("correct_position") if isinstance(item, dict) else -1,
+            )
+            expected_ids = [item.get("id") for item in ordered_items]
+            if any(not isinstance(item_id, str) for item_id in expected_ids):
+                raise GameContentUnavailableError("Moscow timeline answer is invalid")
+            is_correct = ordered_ids == expected_ids
+            now = datetime.now(timezone.utc)
+            item_by_id = {item.get("id"): item for item in items if isinstance(item, dict)}
+            feedback = []
+            for position, item_id in enumerate(ordered_ids, start=1):
+                item = item_by_id[item_id]
+                correct_position = item.get("correct_position")
+                item_correct = correct_position == position
+                feedback.append({
+                    "item_id": item_id,
+                    "correct": item_correct,
+                    "explanation": item.get("explanation", "Проверьте дату события."),
+                })
+                db.add(GameAttempt(
+                    id=uuid.uuid4().hex,
+                    user_id=user_id,
+                    content_revision_id=content.id,
+                    interaction_key=item_id,
+                    answer_key=str(position),
+                    is_correct=item_correct,
+                    created_at=now,
+                ))
+            await db.commit()
+            return {
+                "correct": is_correct,
+                "expected_order": expected_ids if is_correct else None,
                 "feedback": feedback,
                 "profile": self._profile_payload(profile),
             }
@@ -890,6 +948,29 @@ class GameProgressService:
                 {"id": choice.get("id"), "label": choice.get("label")}
                 for choice in choices
                 if isinstance(choice, dict)
+            ],
+        }
+
+    @staticmethod
+    def _timeline_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+        timeline = payload.get("timeline")
+        return timeline if isinstance(timeline, dict) else None
+
+    @staticmethod
+    def _public_timeline_drill(payload: dict[str, Any]) -> dict[str, Any] | None:
+        timeline = GameProgressService._timeline_payload(payload)
+        if timeline is None:
+            return None
+        items = timeline.get("items")
+        if not isinstance(items, list):
+            raise GameContentUnavailableError("Moscow timeline drill is invalid")
+        return {
+            "title": timeline.get("title", "Собери хронологию"),
+            "intro": timeline.get("intro", "Расставь события от раннего к позднему."),
+            "items": [
+                {"id": item.get("id"), "label": item.get("label")}
+                for item in items
+                if isinstance(item, dict)
             ],
         }
 

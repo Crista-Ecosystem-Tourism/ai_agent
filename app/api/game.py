@@ -41,6 +41,10 @@ class MoscowMatchingAnswerIn(BaseModel):
     answers: list[MatchingAnswerItem] = Field(min_length=3, max_length=3)
 
 
+class MoscowTimelineAnswerIn(BaseModel):
+    ordered_ids: list[str] = Field(min_length=3, max_length=3)
+
+
 @router.get("/onboarding")
 async def get_onboarding(
     user: dict = Depends(get_current_user),
@@ -212,6 +216,28 @@ async def answer_moscow_matching(
         raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
             detail="Упражнение на сопоставление временно недоступно",
+        )
+
+
+@router.post("/paths/moscow/sandbox/timeline/answer")
+async def answer_moscow_timeline(
+    payload: MoscowTimelineAnswerIn,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.answer_moscow_timeline(user["sub"], payload.ordered_ids)
+    except ValueError:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Нужно расставить все три события")
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши финальный круг Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Упражнение на хронологию временно недоступно",
         )
 
 
