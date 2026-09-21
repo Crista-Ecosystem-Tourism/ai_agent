@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 import uuid
 from datetime import datetime, timezone
@@ -216,3 +217,21 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sandbox["lessons"]), 10)
         self.assertEqual(sandbox["lessons"][0]["title"], "Красная площадь")
         self.assertNotIn("correct_option_id", sandbox["lessons"][0]["question"])
+        self.assertEqual(sandbox["drill"]["title"], "Правда или миф")
+        self.assertEqual(len(sandbox["drill"]["statements"]), 3)
+        self.assertNotIn("correct_answer", sandbox["drill"]["statements"][0])
+
+        truth_myth = await self.game.answer_moscow_truth_myth(
+            self.user_id, "zaryadye-2017", "truth",
+        )
+        self.assertTrue(truth_myth["correct"])
+        self.assertIn("2017", truth_myth["explanation"])
+        self.assertEqual(truth_myth["profile"], {"xp": 275, "energy": 2, "streak": 1})
+
+    async def test_first_game_requests_share_one_profile(self):
+        onboarding, path = await asyncio.gather(
+            self.game.get_onboarding(self.user_id),
+            self.game.get_moscow_path(self.user_id),
+        )
+        self.assertEqual(onboarding["profile"], {"xp": 0, "energy": 5, "streak": 0})
+        self.assertEqual(path["profile"], onboarding["profile"])

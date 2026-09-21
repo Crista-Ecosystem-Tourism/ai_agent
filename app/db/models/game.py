@@ -66,6 +66,9 @@ class GameCity(Base, TimestampMixin):
     boss_content_revision_id: Mapped[str | None] = mapped_column(
         ForeignKey("game_content_revision.id"), nullable=True
     )
+    sandbox_content_revision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("game_content_revision.id"), nullable=True
+    )
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (

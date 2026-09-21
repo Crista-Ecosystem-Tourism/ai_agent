@@ -27,6 +27,11 @@ class MoscowBossAnswerIn(BaseModel):
     answers: list[BossAnswerItem] = Field(min_length=3, max_length=3)
 
 
+class TruthMythAnswerIn(BaseModel):
+    statement_id: str = Field(min_length=1, max_length=120)
+    answer_key: str = Field(pattern="^(truth|myth)$")
+
+
 @router.get("/onboarding")
 async def get_onboarding(
     user: dict = Depends(get_current_user),
@@ -150,6 +155,30 @@ async def get_moscow_sandbox(
         raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
             detail="Песочница Москвы временно недоступна",
+        )
+
+
+@router.post("/paths/moscow/sandbox/truth-myth/answer")
+async def answer_moscow_truth_myth(
+    payload: TruthMythAnswerIn,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.answer_moscow_truth_myth(
+            user["sub"], payload.statement_id, payload.answer_key,
+        )
+    except ValueError:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестный ответ для упражнения")
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши финальный круг Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Упражнение «Правда или миф» временно недоступно",
         )
 
 

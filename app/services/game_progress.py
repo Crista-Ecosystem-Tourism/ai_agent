@@ -220,6 +220,7 @@ class GameProgressService:
             city_stamp = await self._city_stamp(db, user_id, city)
             if city_stamp is None:
                 raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            drill = await self._published_moscow_sandbox_content(db, city)
             quests = list((await db.scalars(
                 select(GameQuest)
                 .where(GameQuest.city_id == city.id, GameQuest.is_published.is_(True))
@@ -257,6 +258,49 @@ class GameProgressService:
                 "profile": self._profile_payload(profile),
                 "city_stamp": self._stamp_payload(city_stamp),
                 "lessons": lessons,
+                "drill": self._public_truth_myth_drill(drill.payload) if drill else None,
+            }
+
+    async def answer_moscow_truth_myth(
+        self, user_id: str, statement_id: str, answer_key: str,
+    ) -> dict[str, Any]:
+        """Check an optional sandbox drill without awarding XP or spending energy."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            if await self._city_stamp(db, user_id, city) is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            content = await self._published_moscow_sandbox_content(db, city)
+            if content is None:
+                raise GameContentUnavailableError("Moscow truth-or-myth drill is not published")
+            statements = content.payload.get("statements")
+            if not isinstance(statements, list):
+                raise GameContentUnavailableError("Moscow truth-or-myth drill is invalid")
+            statement = next(
+                (item for item in statements if item.get("id") == statement_id), None,
+            )
+            if not isinstance(statement, dict) or answer_key not in {"truth", "myth"}:
+                raise ValueError("Unknown sandbox answer")
+            correct_answer = statement.get("correct_answer")
+            if correct_answer not in {"truth", "myth"}:
+                raise GameContentUnavailableError("Moscow truth-or-myth answer is invalid")
+            is_correct = answer_key == correct_answer
+            now = datetime.now(timezone.utc)
+            db.add(GameAttempt(
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                content_revision_id=content.id,
+                interaction_key=statement_id,
+                answer_key=answer_key,
+                is_correct=is_correct,
+                created_at=now,
+            ))
+            await db.commit()
+            return {
+                "correct": is_correct,
+                "explanation": statement.get("explanation", "Проверьте источник утверждения."),
+                "profile": self._profile_payload(profile),
             }
 
     async def answer_moscow_boss(
@@ -442,15 +486,23 @@ class GameProgressService:
         today = datetime.now(GAME_TIMEZONE).date()
         profile = await db.get(GameProfile, user_id)
         if profile is None:
-            profile = GameProfile(
-                user_id=user_id,
-                xp=0,
-                energy=DAILY_ENERGY,
-                energy_refreshed_on=today,
-                streak=0,
+            # On the first page load the onboarding and path requests may run
+            # concurrently.  Let PostgreSQL elect the creator so the second
+            # request reads the same profile instead of failing on the PK.
+            await db.execute(
+                pg_insert(GameProfile)
+                .values(
+                    user_id=user_id,
+                    xp=0,
+                    energy=DAILY_ENERGY,
+                    energy_refreshed_on=today,
+                    streak=0,
+                )
+                .on_conflict_do_nothing(index_elements=["user_id"])
             )
-            db.add(profile)
-            await db.flush()
+            profile = await db.get(GameProfile, user_id)
+            if profile is None:
+                raise RuntimeError("Game profile could not be created")
         elif profile.energy_refreshed_on < today:
             profile.energy = DAILY_ENERGY
             profile.energy_refreshed_on = today
@@ -590,6 +642,19 @@ class GameProgressService:
             raise GameContentUnavailableError("Moscow city boss content is not published")
         return city, content
 
+    @staticmethod
+    async def _published_moscow_sandbox_content(
+        db: AsyncSession, city: GameCity,
+    ) -> GameContentRevision | None:
+        if not city.sandbox_content_revision_id:
+            return None
+        return await db.scalar(
+            select(GameContentRevision).where(
+                GameContentRevision.id == city.sandbox_content_revision_id,
+                GameContentRevision.is_published.is_(True),
+            )
+        )
+
     async def _moscow_boss_summary(
         self,
         db: AsyncSession,
@@ -709,6 +774,21 @@ class GameProgressService:
         if isinstance(fact, dict) and isinstance(fact.get("text"), str):
             return fact["text"]
         return "Объяснение доступно в источнике урока."
+
+    @staticmethod
+    def _public_truth_myth_drill(payload: dict[str, Any]) -> dict[str, Any]:
+        statements = payload.get("statements")
+        if not isinstance(statements, list):
+            raise GameContentUnavailableError("Moscow truth-or-myth drill is invalid")
+        return {
+            "title": payload.get("title", "Правда или миф"),
+            "intro": payload.get("intro", "Выбери ответ и проверь объяснение."),
+            "statements": [
+                {"id": statement.get("id"), "text": statement.get("text")}
+                for statement in statements
+                if isinstance(statement, dict)
+            ],
+        }
 
     @staticmethod
     def _profile_payload(profile: GameProfile) -> dict[str, Any]:
