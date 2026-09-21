@@ -272,6 +272,7 @@ class GameProgressService:
                 "word_blocks": self._public_word_blocks_drill(drill.payload) if drill else None,
                 "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
                 "story": self._public_story_card(drill.payload) if drill else None,
+                "photo_scanner": self._public_photo_scanner_drill(drill.payload) if drill else None,
                 "practice_recovery": self._practice_recovery_payload(profile),
             }
 
@@ -522,6 +523,42 @@ class GameProgressService:
             return {
                 "correct": is_correct,
                 "explanation": price_slider.get("explanation", "Проверьте цену в источнике упражнения."),
+                "profile": self._profile_payload(profile),
+            }
+
+    async def answer_moscow_photo_scanner(self, user_id: str, hotspot_id: str) -> dict[str, Any]:
+        """Check a photograph hotspot on the server without changing sandbox rewards or energy."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            if await self._city_stamp(db, user_id, city) is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            content = await self._published_moscow_sandbox_content(db, city)
+            if content is None:
+                raise GameContentUnavailableError("Moscow photo-scanner drill is not published")
+            scanner = self._photo_scanner_payload(content.payload)
+            hotspots = scanner.get("hotspots") if scanner else None
+            correct_hotspot_id = scanner.get("correct_hotspot_id") if scanner else None
+            hotspot_ids = {item.get("id") for item in hotspots if isinstance(item, dict)} if isinstance(hotspots, list) else set()
+            if not hotspot_ids or not isinstance(correct_hotspot_id, str) or correct_hotspot_id not in hotspot_ids:
+                raise GameContentUnavailableError("Moscow photo-scanner drill is invalid")
+            if hotspot_id not in hotspot_ids:
+                raise ValueError("Unknown scanner hotspot")
+            is_correct = hotspot_id == correct_hotspot_id
+            db.add(GameAttempt(
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                content_revision_id=content.id,
+                interaction_key="photo-scanner",
+                answer_key=hotspot_id,
+                is_correct=is_correct,
+                created_at=self._now(),
+            ))
+            await db.commit()
+            return {
+                "correct": is_correct,
+                "explanation": scanner.get("explanation", "Сверь деталь со снимком и источником."),
                 "profile": self._profile_payload(profile),
             }
 
@@ -1186,6 +1223,43 @@ class GameProgressService:
             "source_label": story.get("source_label", "Открыть источник"),
             "source_url": story["source_url"],
             "note": story.get("note", "Проверьте факт по первоисточнику."),
+        }
+
+    @staticmethod
+    def _photo_scanner_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+        scanner = payload.get("photo_scanner")
+        return scanner if isinstance(scanner, dict) else None
+
+    @staticmethod
+    def _public_photo_scanner_drill(payload: dict[str, Any]) -> dict[str, Any] | None:
+        scanner = GameProgressService._photo_scanner_payload(payload)
+        if scanner is None:
+            return None
+        required = ("title", "image_url", "image_alt", "question", "media_credit", "media_source_url", "license")
+        if not all(isinstance(scanner.get(key), str) and scanner[key].strip() for key in required):
+            raise GameContentUnavailableError("Moscow photo-scanner drill is invalid")
+        hotspots = scanner.get("hotspots")
+        if not isinstance(hotspots, list) or len(hotspots) < 2:
+            raise GameContentUnavailableError("Moscow photo-scanner hotspots are invalid")
+        public_hotspots = []
+        for hotspot in hotspots:
+            if not isinstance(hotspot, dict) or not isinstance(hotspot.get("id"), str):
+                raise GameContentUnavailableError("Moscow photo-scanner hotspot is invalid")
+            coordinates = [hotspot.get(key) for key in ("x", "y", "width", "height")]
+            if not all(isinstance(value, int) and 0 <= value <= 100 for value in coordinates):
+                raise GameContentUnavailableError("Moscow photo-scanner hotspot is invalid")
+            public_hotspots.append({"id": hotspot["id"], "x": hotspot["x"], "y": hotspot["y"], "width": hotspot["width"], "height": hotspot["height"]})
+        return {
+            "title": scanner["title"],
+            "intro": scanner.get("intro", "Отметь область на фотографии и получи объяснение."),
+            "question": scanner["question"],
+            "image_url": scanner["image_url"],
+            "image_alt": scanner["image_alt"],
+            "media_credit": scanner["media_credit"],
+            "media_source_url": scanner["media_source_url"],
+            "license": scanner["license"],
+            "field_note": scanner.get("field_note", "Это экранное упражнение, а не AR-навигация."),
+            "hotspots": public_hotspots,
         }
 
     @staticmethod

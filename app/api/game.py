@@ -53,6 +53,10 @@ class MoscowPriceSliderAnswerIn(BaseModel):
     value: int = Field(ge=0, le=10000)
 
 
+class MoscowPhotoScannerAnswerIn(BaseModel):
+    hotspot_id: str = Field(min_length=1, max_length=120)
+
+
 @router.get("/onboarding")
 async def get_onboarding(
     user: dict = Depends(get_current_user),
@@ -311,6 +315,28 @@ async def restore_moscow_energy(
         raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
             detail="Песочница Москвы временно недоступна",
+        )
+
+
+@router.post("/paths/moscow/sandbox/photo-scanner/answer")
+async def answer_moscow_photo_scanner(
+    payload: MoscowPhotoScannerAnswerIn,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.answer_moscow_photo_scanner(user["sub"], payload.hotspot_id)
+    except ValueError:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестная область фотографии")
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши финальный круг Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Фото-сканер временно недоступен",
         )
 
 

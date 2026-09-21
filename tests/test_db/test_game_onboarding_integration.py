@@ -235,6 +235,9 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("target", sandbox["price_slider"])
         self.assertEqual(sandbox["story"]["title"], "Сцена: Красная площадь")
         self.assertIn("иллюстрация", sandbox["story"]["media_credit"].lower())
+        self.assertEqual(sandbox["photo_scanner"]["title"], "Фото-сканер: Кремлёвская стена")
+        self.assertEqual(len(sandbox["photo_scanner"]["hotspots"]), 3)
+        self.assertNotIn("correct_hotspot_id", sandbox["photo_scanner"])
 
         truth_myth = await self.game.answer_moscow_truth_myth(
             self.user_id, "zaryadye-2017", "truth",
@@ -276,6 +279,10 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recovery["profile"], {"xp": 275, "energy": 3, "streak": 1})
         self.assertTrue(recovery["practice_recovery"]["used_today"])
         self.assertFalse(recovery["practice_recovery"]["available"])
+
+        photo_scanner = await self.game.answer_moscow_photo_scanner(self.user_id, "wall-merlons")
+        self.assertTrue(photo_scanner["correct"])
+        self.assertEqual(photo_scanner["profile"], {"xp": 275, "energy": 3, "streak": 1})
 
     async def test_first_game_requests_share_one_profile(self):
         onboarding, path = await asyncio.gather(
