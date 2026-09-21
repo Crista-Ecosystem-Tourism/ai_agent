@@ -134,6 +134,25 @@ async def get_moscow_boss(
         )
 
 
+@router.get("/paths/moscow/sandbox")
+async def get_moscow_sandbox(
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.get_moscow_sandbox(user["sub"])
+    except GameQuestLockedError:
+        raise HTTPException(
+            status_code=HTTP_409_CONFLICT,
+            detail="Сначала заверши финальный круг Москвы",
+        )
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Песочница Москвы временно недоступна",
+        )
+
+
 @router.post("/paths/moscow/boss/answer")
 async def answer_moscow_boss(
     payload: MoscowBossAnswerIn,

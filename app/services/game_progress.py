@@ -211,6 +211,54 @@ class GameProgressService:
                 "sandbox_unlocked": city_stamp is not None,
             }
 
+    async def get_moscow_sandbox(self, user_id: str) -> dict[str, Any]:
+        """Let a city completer freely review published Moscow lessons and sources."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            await self._backfill_onboarding_completion(db, user_id)
+            city, _ = await self._published_moscow_boss(db)
+            city_stamp = await self._city_stamp(db, user_id, city)
+            if city_stamp is None:
+                raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
+            quests = list((await db.scalars(
+                select(GameQuest)
+                .where(GameQuest.city_id == city.id, GameQuest.is_published.is_(True))
+                .order_by(GameQuest.position)
+            )).all())
+            contents = {
+                content.id: content
+                for content in (await db.scalars(
+                    select(GameContentRevision).where(
+                        GameContentRevision.id.in_([quest.content_revision_id for quest in quests]),
+                        GameContentRevision.is_published.is_(True),
+                    )
+                )).all()
+            }
+            lessons = []
+            for quest in quests:
+                content = contents.get(quest.content_revision_id)
+                if content is None:
+                    raise GameContentUnavailableError("Moscow sandbox lesson is not published")
+                public_content = self._public_content(content.payload)
+                fact = public_content.get("fact", {})
+                if not isinstance(fact, dict):
+                    raise GameContentUnavailableError("Moscow sandbox lesson fact is invalid")
+                lessons.append({
+                    "id": quest.id,
+                    "position": quest.position,
+                    "title": public_content.get("scene", {}).get("title", quest.id),
+                    "fact": fact,
+                    "question": public_content.get("question", {}),
+                    "explanation": self._content_explanation(content.payload),
+                })
+            await db.commit()
+            return {
+                "city": {"id": city.id, "name": city.name},
+                "profile": self._profile_payload(profile),
+                "city_stamp": self._stamp_payload(city_stamp),
+                "lessons": lessons,
+            }
+
     async def answer_moscow_boss(
         self, user_id: str, answers: list[dict[str, str]],
     ) -> dict[str, Any]:
@@ -235,6 +283,7 @@ class GameProgressService:
 
             now = datetime.now(timezone.utc)
             incorrect_answers = 0
+            feedback = []
             for question in questions:
                 question_id = question.get("id")
                 options = question.get("options", [])
@@ -245,6 +294,11 @@ class GameProgressService:
                 is_correct = answer_key == question.get("correct_option_id")
                 if not is_correct:
                     incorrect_answers += 1
+                feedback.append({
+                    "question_id": question_id,
+                    "correct": is_correct,
+                    "explanation": question.get("explanation", "Ответ подтверждается источником урока."),
+                })
                 db.add(GameAttempt(
                     id=uuid.uuid4().hex,
                     user_id=user_id,
@@ -286,6 +340,7 @@ class GameProgressService:
                 "completed": city_stamp is not None,
                 "city_stamp": self._stamp_payload(city_stamp),
                 "sandbox_unlocked": city_stamp is not None,
+                "feedback": feedback,
             }
 
     async def get_moscow_quest(self, user_id: str, quest_id: str) -> dict[str, Any]:
@@ -337,6 +392,7 @@ class GameProgressService:
 
             xp_awarded = 0
             stamp: GameStamp | None = None
+            explanation = self._content_explanation(content.payload)
             if is_correct:
                 reward = content.payload.get("reward", {})
                 stamp_key = reward.get("stamp_key")
@@ -379,6 +435,7 @@ class GameProgressService:
                 "daily": daily,
                 "completed": stamp is not None,
                 "stamp": self._stamp_payload(stamp),
+                "explanation": explanation,
             }
 
     async def _ensure_profile(self, db: AsyncSession, user_id: str) -> GameProfile:
@@ -642,6 +699,16 @@ class GameProgressService:
             for question in public_payload["questions"]:
                 question.pop("correct_option_id", None)
         return public_payload
+
+    @staticmethod
+    def _content_explanation(payload: dict[str, Any]) -> str:
+        explanation = payload.get("explanation")
+        if isinstance(explanation, str) and explanation.strip():
+            return explanation
+        fact = payload.get("fact", {})
+        if isinstance(fact, dict) and isinstance(fact.get("text"), str):
+            return fact["text"]
+        return "Объяснение доступно в источнике урока."
 
     @staticmethod
     def _profile_payload(profile: GameProfile) -> dict[str, Any]:

@@ -76,6 +76,8 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await self.game.answer_moscow_quest(self.user_id, "moscow-spasskaya-tower", "1491")
         with self.assertRaises(GameQuestLockedError):
             await self.game.get_moscow_boss(self.user_id)
+        with self.assertRaises(GameQuestLockedError):
+            await self.game.get_moscow_sandbox(self.user_id)
 
         incorrect = await self.game.answer_red_square(self.user_id, "color")
         self.assertFalse(incorrect["correct"])
@@ -104,6 +106,7 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.user_id, "moscow-spasskaya-tower", "1547"
         )
         self.assertFalse(second_incorrect["correct"])
+        self.assertIn("1491", second_incorrect["explanation"])
         self.assertEqual(second_incorrect["profile"], {"xp": 50, "energy": 3, "streak": 1})
 
         second_correct = await self.game.answer_moscow_quest(
@@ -180,6 +183,14 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(boss_incorrect["incorrect_answers"], 1)
         self.assertFalse(boss_incorrect["completed"])
         self.assertEqual(boss_incorrect["profile"], {"xp": 275, "energy": 2, "streak": 1})
+        self.assertEqual(
+            boss_incorrect["feedback"][0],
+            {
+                "question_id": "moscow-boss-cathedral",
+                "correct": False,
+                "explanation": "Собор построили в 1484–1489 годах и освятили в 1489 году.",
+            },
+        )
 
         boss_correct = await self.game.answer_moscow_boss(self.user_id, [
             {"question_id": "moscow-boss-cathedral", "answer_key": "1489"},
@@ -200,3 +211,8 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(boss_retry["completed"])
         self.assertEqual(boss_retry["profile"], {"xp": 275, "energy": 2, "streak": 1})
         self.assertEqual((await self.game.get_moscow_path(self.user_id))["boss"]["sandbox_unlocked"], True)
+        sandbox = await self.game.get_moscow_sandbox(self.user_id)
+        self.assertEqual(sandbox["city_stamp"]["key"], "moscow-city-explorer")
+        self.assertEqual(len(sandbox["lessons"]), 10)
+        self.assertEqual(sandbox["lessons"][0]["title"], "Красная площадь")
+        self.assertNotIn("correct_option_id", sandbox["lessons"][0]["question"])
