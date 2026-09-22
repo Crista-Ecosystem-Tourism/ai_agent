@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 # Register all relationship targets before configuring SQLAlchemy mappers.
 from app.db.models import chat  # noqa: F401
 from app.db.models.auth import User
+from app.db.models.saved_route import SavedRoute
 from app.services.game_progress import GameProgressService, GameQuestLockedError
 from app.services.wiki import WikiNotFoundError, WikiService
 from app.db.dsn import get_database_url
@@ -101,6 +102,11 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(passport["profile"], correct["profile"])
         self.assertEqual(passport["stamps"][0]["key"], "moscow-starter")
         self.assertEqual(next(city for city in passport["cities"] if city["id"] == "moscow")["completed_quests"], 1)
+        async with self.sessions() as db:
+            db.add(SavedRoute(id="passport-route", user_id=self.user_id, name="Музеи", destination="Москва", places={}, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)))
+            await db.commit()
+        passport_with_route = await self.game.get_passport(self.user_id)
+        self.assertEqual(passport_with_route["routes"][0]["destination"], "Москва")
 
         completed_path = await self.game.get_moscow_path(self.user_id)
         self.assertTrue(completed_path["nodes"][0]["completed"])

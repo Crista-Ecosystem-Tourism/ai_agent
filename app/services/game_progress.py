@@ -21,6 +21,7 @@ from app.db.models.game import (
     GameRewardLedger,
     GameStamp,
 )
+from app.db.models.saved_route import SavedRoute
 
 
 ONBOARDING_REVISION_ID = "onboarding-moscow-v1"
@@ -88,6 +89,11 @@ class GameProgressService:
             completed_by_city: dict[str, int] = {}
             for city_id, _ in completed_rows:
                 completed_by_city[city_id] = completed_by_city.get(city_id, 0) + 1
+            routes = (await db.execute(
+                select(SavedRoute.id, SavedRoute.name, SavedRoute.destination, SavedRoute.updated_at)
+                .where(SavedRoute.user_id == user_id)
+                .order_by(SavedRoute.updated_at.desc())
+            )).all()
             await db.commit()
             return {
                 "profile": self._profile_payload(profile),
@@ -95,6 +101,10 @@ class GameProgressService:
                 "cities": [
                     {"id": city.id, "name": city.name, "completed_quests": completed_by_city.get(city.id, 0), "required_quest_count": city.required_quest_count}
                     for city in cities
+                ],
+                "routes": [
+                    {"id": route.id, "name": route.name, "destination": route.destination, "updated_at": route.updated_at.isoformat() if route.updated_at else None}
+                    for route in routes
                 ],
             }
 
