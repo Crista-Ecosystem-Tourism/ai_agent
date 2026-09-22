@@ -122,12 +122,24 @@ class MessageProcessor:
             for place in result.get("places", [])
             if place.id or place.name
         }
-        places = [
-            places_by_id[slot.place_id]
+        selected_ids = [
+            slot.place_id
             for day in itinerary.days
             for slot in day.slots
-            if slot.place_id in places_by_id
         ]
+        if not selected_ids or any(place_id not in places_by_id for place_id in selected_ids):
+            logger.warning("Itinerary contains POIs that were not returned by search; route skipped")
+            return None, None
+
+        places = [places_by_id[place_id] for place_id in selected_ids]
+        expected_city = (deps.user_preferences.city or "").strip().casefold()
+        mismatched_places = [
+            place for place in places
+            if expected_city and place.city and place.city.strip().casefold() != expected_city
+        ]
+        if mismatched_places:
+            logger.warning("Itinerary contains POIs outside of the selected city; route skipped")
+            return None, None
 
         # A missing or unlocated POI is not substituted with a guessed point.
         route = await RouteService.build_route(places, deps.http_client)
