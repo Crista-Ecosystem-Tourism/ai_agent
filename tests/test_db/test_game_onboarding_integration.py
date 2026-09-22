@@ -299,6 +299,13 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(path["city"]["id"], "moscow")
         quest = await self.game.get_city_quest(self.user_id, "moscow", "moscow-red-square")
         self.assertEqual(quest["quest"]["id"], "moscow-red-square")
+        st_petersburg = await self.game.get_city_path(self.user_id, "st-petersburg")
+        self.assertEqual(st_petersburg["city"]["name"], "Санкт-Петербург")
+        self.assertEqual([node["id"] for node in st_petersburg["nodes"]], ["spb-hermitage", "spb-peterhof"])
+        first = await self.game.answer_city_quest(self.user_id, "st-petersburg", "spb-hermitage", "1764")
+        self.assertEqual(first["xp_awarded"], 25)
+        second = await self.game.get_city_quest(self.user_id, "st-petersburg", "spb-peterhof")
+        self.assertEqual(second["quest"]["id"], "spb-peterhof")
 
     async def test_concurrent_correct_onboarding_awards_once(self):
         """Two devices may submit the same correct answer, but earn one reward."""
