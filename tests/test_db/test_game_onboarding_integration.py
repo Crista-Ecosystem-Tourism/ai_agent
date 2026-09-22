@@ -294,6 +294,20 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(onboarding["profile"], {"xp": 0, "energy": 5, "streak": 0})
         self.assertEqual(path["profile"], onboarding["profile"])
 
+    async def test_concurrent_correct_onboarding_awards_once(self):
+        """Two devices may submit the same correct answer, but earn one reward."""
+        first, second = await asyncio.gather(
+            self.game.answer_red_square(self.user_id, "beautiful"),
+            self.game.answer_red_square(self.user_id, "beautiful"),
+        )
+        self.assertEqual(sorted([first["xp_awarded"], second["xp_awarded"]]), [0, 50])
+        self.assertTrue(first["completed"])
+        self.assertTrue(second["completed"])
+
+        profile = await self.game.get_onboarding(self.user_id)
+        self.assertEqual(profile["profile"], {"xp": 50, "energy": 5, "streak": 1})
+        self.assertEqual(profile["daily"]["completed_quests"], 1)
+
     async def test_moscow_day_boundary_refreshes_energy_and_resets_broken_streak(self):
         clock = [datetime(2026, 9, 1, 20, 59, tzinfo=timezone.utc)]  # 23:59 in Moscow
         game = GameProgressService(self.sessions, now=lambda: clock[0])
