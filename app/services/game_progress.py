@@ -68,6 +68,36 @@ class GameProgressService:
                 "starter_stamp": self._stamp_payload(stamp),
             }
 
+    async def get_passport(self, user_id: str) -> dict[str, Any]:
+        """Server-owned game portion of a user's travel passport."""
+        async with self.session_factory() as db:
+            profile = await self._ensure_profile(db, user_id)
+            stamps = list((await db.scalars(
+                select(GameStamp)
+                .where(GameStamp.user_id == user_id)
+                .order_by(GameStamp.earned_at.desc())
+            )).all())
+            cities = list((await db.scalars(
+                select(GameCity).where(GameCity.is_published.is_(True)).order_by(GameCity.tier, GameCity.name)
+            )).all())
+            completed_rows = (await db.execute(
+                select(GameQuest.city_id, GameQuestCompletion.quest_id)
+                .join(GameQuestCompletion, GameQuestCompletion.quest_id == GameQuest.id)
+                .where(GameQuestCompletion.user_id == user_id)
+            )).all()
+            completed_by_city: dict[str, int] = {}
+            for city_id, _ in completed_rows:
+                completed_by_city[city_id] = completed_by_city.get(city_id, 0) + 1
+            await db.commit()
+            return {
+                "profile": self._profile_payload(profile),
+                "stamps": [self._stamp_payload(stamp) for stamp in stamps],
+                "cities": [
+                    {"id": city.id, "name": city.name, "completed_quests": completed_by_city.get(city.id, 0), "required_quest_count": city.required_quest_count}
+                    for city in cities
+                ],
+            }
+
     async def answer_red_square(self, user_id: str, answer_key: str) -> dict[str, Any]:
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)

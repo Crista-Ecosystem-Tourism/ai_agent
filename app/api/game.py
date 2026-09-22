@@ -57,6 +57,14 @@ class MoscowPhotoScannerAnswerIn(BaseModel):
     hotspot_id: str = Field(min_length=1, max_length=120)
 
 
+@router.get("/passport")
+async def get_passport(
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    return await game.get_passport(user["sub"])
+
+
 @router.get("/onboarding")
 async def get_onboarding(
     user: dict = Depends(get_current_user),

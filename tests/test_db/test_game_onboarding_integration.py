@@ -97,6 +97,11 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(correct["completed"])
         self.assertEqual(correct["starter_stamp"]["key"], "moscow-starter")
 
+        passport = await self.game.get_passport(self.user_id)
+        self.assertEqual(passport["profile"], correct["profile"])
+        self.assertEqual(passport["stamps"][0]["key"], "moscow-starter")
+        self.assertEqual(next(city for city in passport["cities"] if city["id"] == "moscow")["completed_quests"], 1)
+
         completed_path = await self.game.get_moscow_path(self.user_id)
         self.assertTrue(completed_path["nodes"][0]["completed"])
         self.assertTrue(completed_path["nodes"][1]["unlocked"])
