@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import fields
 
 from app.core.services.processor import MessageProcessor, ProcessorResult
-from app.core.models import TravelDeps, UserPreferences
+from app.core.models import Itinerary, ItineraryDay, ItinerarySlot, TravelDeps, UserPreferences
 from app.api.schemas import SearchResult
 
 
@@ -41,6 +41,23 @@ def _make_processor():
     return MessageProcessor(preferences_agent=mock_agent, model=MagicMock())
 
 
+def _make_itinerary() -> Itinerary:
+    """Маршрут намеренно выбирает лишь часть найденных POI и задаёт их порядок."""
+    return Itinerary(
+        days=[
+            ItineraryDay(
+                day=1,
+                title="Прогулка",
+                slots=[
+                    ItinerarySlot(time_label="Утро", place_id="2", place_name="Третьяковская галерея"),
+                    ItinerarySlot(time_label="Вечер", place_id="3", place_name="Парк Горького"),
+                ],
+            )
+        ],
+        summary="Готово",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. process_message с маршрутом
 # ---------------------------------------------------------------------------
@@ -69,7 +86,8 @@ async def test_process_message_with_route(
     processor = _make_processor()
     deps = _make_deps()
 
-    result = await processor.process_message("Покажи достопримечательности Москвы", deps)
+    with patch.object(processor, "_generate_itinerary", new=AsyncMock(return_value=_make_itinerary())):
+        result = await processor.process_message("Покажи достопримечательности Москвы", deps)
 
     assert isinstance(result, ProcessorResult)
     assert result.has_results is True
@@ -78,6 +96,8 @@ async def test_process_message_with_route(
     assert result.route_metadata is not None
     assert result.route_metadata["graph_id"] == "test-graph-123"
     mock_build_route.assert_called_once()
+    routed_places = mock_build_route.call_args.args[0]
+    assert [place.id for place in routed_places] == ["2", "3"]
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +117,8 @@ async def test_process_message_route_unavailable(
     processor = _make_processor()
     deps = _make_deps()
 
-    result = await processor.process_message("Покажи достопримечательности Москвы", deps)
+    with patch.object(processor, "_generate_itinerary", new=AsyncMock(return_value=_make_itinerary())):
+        result = await processor.process_message("Покажи достопримечательности Москвы", deps)
 
     assert isinstance(result, ProcessorResult)
     assert result.has_results is True
@@ -152,6 +173,6 @@ def test_processor_result_has_all_fields():
     expected = {
         "response", "has_results", "is_complete",
         "route_geojson", "route_metadata",
-        "search_results", "itinerary", "suggested_replies",
+        "search_results", "itinerary", "suggested_replies", "follow_up_questions",
     }
     assert expected == field_names

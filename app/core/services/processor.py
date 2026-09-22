@@ -6,6 +6,7 @@ from typing import List, Union, Optional, Any
 
 from pydantic_ai import Agent
 from app.core.services.places import PlacesSearchService
+from app.core.services.route import RouteService
 
 from app.core.models import TravelDeps, SearchQueries, RerankResult, Itinerary, UserPreferences
 from app.api.schemas import SearchResult, Place
@@ -107,6 +108,39 @@ class MessageProcessor:
             })
 
         return groups if groups else None
+
+    async def _build_verified_route(
+        self,
+        deps: TravelDeps,
+        search_results: list,
+        itinerary: Itinerary,
+    ) -> tuple[dict | None, dict | None]:
+        """Build geometry only for POIs selected in the generated itinerary."""
+        places_by_id = {
+            place.id or place.name: place
+            for result in search_results
+            for place in result.get("places", [])
+            if place.id or place.name
+        }
+        places = [
+            places_by_id[slot.place_id]
+            for day in itinerary.days
+            for slot in day.slots
+            if slot.place_id in places_by_id
+        ]
+
+        # A missing or unlocated POI is not substituted with a guessed point.
+        route = await RouteService.build_route(places, deps.http_client)
+        if route is None:
+            return None, None
+        return route.geojson, {
+            "graph_id": route.graph_id,
+            "build_time_seconds": route.build_time_seconds,
+            "nodes_count": route.nodes_count,
+            "edges_count": route.edges_count,
+            "alternatives_count": route.alternatives_count,
+            "metrics": route.metrics,
+        }
 
     async def process_message(
         self,
@@ -229,12 +263,17 @@ class MessageProcessor:
                     logger.warning("Itinerary generation failed: %s", e)
 
                 summary = itinerary.summary if itinerary else "Ваш план путешествия готов!"
+                route_geojson, route_metadata = (
+                    await self._build_verified_route(deps, search_results, itinerary)
+                    if itinerary
+                    else (None, None)
+                )
                 return ProcessorResult(
                     response=summary,
                     has_results=True,
                     is_complete=True,
-                    route_geojson=None,
-                    route_metadata=None,
+                    route_geojson=route_geojson,
+                    route_metadata=route_metadata,
                     search_results=structured_results,
                     itinerary=itinerary,
                     suggested_replies=None,
@@ -258,18 +297,25 @@ class MessageProcessor:
 
                 # Generate structured itinerary when conversation is complete
                 itinerary = None
+                route_geojson = None
+                route_metadata = None
                 if conversation_complete:
                     try:
                         itinerary = await self._generate_itinerary(deps, search_results)
                     except Exception as e:
                         logger.warning("Itinerary generation failed: %s", e)
 
+                if itinerary:
+                    route_geojson, route_metadata = await self._build_verified_route(
+                        deps, search_results, itinerary
+                    )
+
                 return ProcessorResult(
                     response=structured_results,
                     has_results=True,
                     is_complete=conversation_complete,
-                    route_geojson=None,
-                    route_metadata=None,
+                    route_geojson=route_geojson,
+                    route_metadata=route_metadata,
                     itinerary=itinerary,
                     suggested_replies=suggested_replies,
                 )
@@ -395,13 +441,16 @@ class MessageProcessor:
 
             if itinerary:
                 summary_text = itinerary.summary or "Ваш план путешествия готов!"
+                route_geojson, route_metadata = await self._build_verified_route(
+                    deps, search_results, itinerary
+                )
                 print(f"\nСтруктурированный итинерарий готов! Дней: {len(itinerary.days)}")
                 return ProcessorResult(
                     response=summary_text,
                     has_results=True,
                     is_complete=True,
-                    route_geojson=None,
-                    route_metadata=None,
+                    route_geojson=route_geojson,
+                    route_metadata=route_metadata,
                     search_results=structured,
                     itinerary=itinerary,
                 )
