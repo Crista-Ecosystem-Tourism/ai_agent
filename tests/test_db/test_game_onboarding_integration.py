@@ -301,13 +301,19 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(quest["quest"]["id"], "moscow-red-square")
         st_petersburg = await self.game.get_city_path(self.user_id, "st-petersburg")
         self.assertEqual(st_petersburg["city"]["name"], "Санкт-Петербург")
-        self.assertEqual([node["id"] for node in st_petersburg["nodes"]], ["spb-hermitage", "spb-peterhof"])
+        self.assertEqual(
+            [node["id"] for node in st_petersburg["nodes"]],
+            ["spb-hermitage", "spb-peterhof", "spb-collection", "spb-fountains", "spb-peterhof-history"],
+        )
         first = await self.game.answer_city_quest(self.user_id, "st-petersburg", "spb-hermitage", "1764")
         self.assertEqual(first["xp_awarded"], 25)
         second = await self.game.get_city_quest(self.user_id, "st-petersburg", "spb-peterhof")
         self.assertEqual(second["quest"]["id"], "spb-peterhof")
         sochi = await self.game.get_city_path(self.user_id, "sochi")
-        self.assertEqual([node["id"] for node in sochi["nodes"]], ["sochi-national-park", "sochi-dendrarium"])
+        self.assertEqual(
+            [node["id"] for node in sochi["nodes"]],
+            ["sochi-national-park", "sochi-dendrarium", "sochi-forest", "sochi-mzymta", "sochi-park-area"],
+        )
 
     async def test_concurrent_correct_onboarding_awards_once(self):
         """Two devices may submit the same correct answer, but earn one reward."""
