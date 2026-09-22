@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy import select, insert, func
+from sqlalchemy import select, insert, func, update
 from app.db.models.auth import User
 
 
@@ -64,6 +64,32 @@ class UserService:
                 select(User).where(func.lower(User.email) == email.lower())
             )).scalar_one_or_none()
             return row
+
+    async def get_vision_consent(self, user_id: str) -> Optional[dict]:
+        async with self.session_factory() as db:
+            row = (await db.execute(
+                select(User.vision_consent_granted, User.vision_consent_version)
+                .where(User.id == user_id)
+            )).one_or_none()
+            if row is None:
+                return None
+            return {"granted": row.vision_consent_granted, "policy_version": row.vision_consent_version}
+
+    async def set_vision_consent(self, user_id: str, granted: bool, policy_version: str) -> Optional[dict]:
+        async with self.session_factory() as db:
+            result = await db.execute(
+                update(User)
+                .where(User.id == user_id)
+                .values(
+                    vision_consent_granted=granted,
+                    vision_consent_version=policy_version,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            if result.rowcount != 1:
+                return None
+            await db.commit()
+        return {"granted": granted, "policy_version": policy_version}
 
     async def create_with_password(
         self, email: str, name: str, hashed_password: str
