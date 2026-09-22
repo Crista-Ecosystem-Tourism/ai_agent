@@ -2,6 +2,7 @@ import asyncio
 import unittest
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import insert, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -322,6 +323,27 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         reset_streak = await game.answer_moscow_quest(self.user_id, "moscow-tsar-bell", "1735")
         self.assertEqual(reset_streak["profile"], {"xp": 100, "energy": 5, "streak": 1})
         self.assertEqual(reset_streak["daily"]["completed_quests"], 1)
+
+    async def test_moscow_daily_rules_use_moscow_date_during_other_timezone_dst(self):
+        """The injected clock may be zoned elsewhere; the game day remains Moscow's."""
+        los_angeles = ZoneInfo("America/Los_Angeles")
+        # US daylight saving time starts earlier that morning. These two local
+        # instants still straddle midnight in Moscow (23:59 → 00:01).
+        clock = [datetime(2026, 3, 8, 13, 59, tzinfo=los_angeles)]
+        game = GameProgressService(self.sessions, now=lambda: clock[0])
+
+        self.assertEqual(game._today().isoformat(), "2026-03-08")
+        self.assertFalse((await game.answer_red_square(self.user_id, "color"))["correct"])
+        self.assertEqual(
+            (await game.answer_red_square(self.user_id, "beautiful"))["daily"]["completed_quests"],
+            1,
+        )
+
+        clock[0] = datetime(2026, 3, 8, 14, 1, tzinfo=los_angeles)
+        refreshed = await game.get_onboarding(self.user_id)
+        self.assertEqual(game._today().isoformat(), "2026-03-09")
+        self.assertEqual(refreshed["profile"]["energy"], 5)
+        self.assertEqual(refreshed["daily"]["completed_quests"], 0)
 
     async def test_wiki_draft_is_private_until_editorial_publish(self):
         slug = f"moscow-test-{self.user_id[:8]}"
