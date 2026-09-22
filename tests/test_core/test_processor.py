@@ -95,6 +95,7 @@ async def test_process_message_with_route(
     assert result.route_geojson["type"] == "FeatureCollection"
     assert result.route_metadata is not None
     assert result.route_metadata["graph_id"] == "test-graph-123"
+    assert result.itinerary.schema_version == 1
     mock_build_route.assert_called_once()
     routed_places = mock_build_route.call_args.args[0]
     assert [place.id for place in routed_places] == ["2", "3"]

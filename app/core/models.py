@@ -127,6 +127,10 @@ class ItineraryDay(BaseModel):
 
 class Itinerary(BaseModel):
     """Structured output: полный итинерарий путешествия."""
+    schema_version: Literal[1] = Field(
+        default=1,
+        description="Версия контракта itinerary для безопасной эволюции клиента",
+    )
     days: list[ItineraryDay] = Field(..., description="Дни путешествия")
     summary: str = Field("", description="Краткая сводка/совет по всему путешествию")
 
@@ -145,4 +149,3 @@ class TravelDeps:
     rag_service_url: str
     http_client: httpx.AsyncClient
     user_preferences: UserPreferences
-
