@@ -294,6 +294,12 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(onboarding["profile"], {"xp": 0, "energy": 5, "streak": 0})
         self.assertEqual(path["profile"], onboarding["profile"])
 
+    async def test_generic_city_path_contract_preserves_moscow_route(self):
+        path = await self.game.get_city_path(self.user_id, "moscow")
+        self.assertEqual(path["city"]["id"], "moscow")
+        quest = await self.game.get_city_quest(self.user_id, "moscow", "moscow-red-square")
+        self.assertEqual(quest["quest"]["id"], "moscow-red-square")
+
     async def test_concurrent_correct_onboarding_awards_once(self):
         """Two devices may submit the same correct answer, but earn one reward."""
         first, second = await asyncio.gather(

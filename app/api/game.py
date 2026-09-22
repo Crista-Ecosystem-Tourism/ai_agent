@@ -145,6 +145,54 @@ async def answer_moscow_quest(
         )
 
 
+@router.get("/paths/{city_id}")
+async def get_city_path(
+    city_id: str,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.get_city_path(user["sub"], city_id)
+    except GameContentUnavailableError:
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Маршрут города временно недоступен",
+        )
+
+
+@router.get("/paths/{city_id}/quests/{quest_id}")
+async def get_city_quest(
+    city_id: str,
+    quest_id: str,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.get_city_quest(user["sub"], city_id, quest_id)
+    except GameQuestLockedError:
+        raise HTTPException(status_code=HTTP_409_CONFLICT, detail="Сначала заверши предыдущий квест")
+    except GameContentUnavailableError:
+        raise HTTPException(status_code=HTTP_503_SERVICE_UNAVAILABLE, detail="Квест города временно недоступен")
+
+
+@router.post("/paths/{city_id}/quests/{quest_id}/answer")
+async def answer_city_quest(
+    city_id: str,
+    quest_id: str,
+    payload: RedSquareAnswerIn,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.answer_city_quest(user["sub"], city_id, quest_id, payload.answer_key)
+    except ValueError:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестный вариант ответа")
+    except GameQuestLockedError:
+        raise HTTPException(status_code=HTTP_409_CONFLICT, detail="Сначала заверши предыдущий квест")
+    except GameContentUnavailableError:
+        raise HTTPException(status_code=HTTP_503_SERVICE_UNAVAILABLE, detail="Квест города временно недоступен")
+
+
 @router.get("/paths/moscow/boss")
 async def get_moscow_boss(
     user: dict = Depends(get_current_user),

@@ -138,17 +138,17 @@ class GameProgressService:
                 "starter_stamp": self._stamp_payload(stamp),
             }
 
-    async def get_moscow_path(self, user_id: str) -> dict[str, Any]:
-        """Return only published nodes and calculate unlocks from server completions."""
+    async def get_city_path(self, user_id: str, city_id: str) -> dict[str, Any]:
+        """Return a published city path and server-owned unlock state."""
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
             await self._backfill_onboarding_completion(db, user_id)
 
             city = await db.scalar(
-                select(GameCity).where(GameCity.id == "moscow", GameCity.is_published.is_(True))
+                select(GameCity).where(GameCity.id == city_id, GameCity.is_published.is_(True))
             )
             if city is None:
-                raise GameContentUnavailableError("Moscow path is not published")
+                raise GameContentUnavailableError("City path is not published")
             quests = list((await db.scalars(
                 select(GameQuest)
                 .where(GameQuest.city_id == city.id, GameQuest.is_published.is_(True))
@@ -160,6 +160,7 @@ class GameProgressService:
                     select(GameDistrict).where(GameDistrict.city_id == city.id)
                 )).all()
             }
+
             completed_ids = set((await db.scalars(
                 select(GameQuestCompletion.quest_id).where(GameQuestCompletion.user_id == user_id)
             )).all())
@@ -198,6 +199,9 @@ class GameProgressService:
                 "nodes": nodes,
                 "boss": boss,
             }
+
+    async def get_moscow_path(self, user_id: str) -> dict[str, Any]:
+        return await self.get_city_path(user_id, "moscow")
 
     async def get_moscow_boss(self, user_id: str) -> dict[str, Any]:
         """Return the city boss only after every published Moscow node is complete."""
@@ -697,12 +701,12 @@ class GameProgressService:
                 "feedback": feedback,
             }
 
-    async def get_moscow_quest(self, user_id: str, quest_id: str) -> dict[str, Any]:
-        """Return a published Moscow lesson only when its server prerequisite is met."""
+    async def get_city_quest(self, user_id: str, city_id: str, quest_id: str) -> dict[str, Any]:
+        """Return a published city lesson only when its server prerequisite is met."""
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
             await self._backfill_onboarding_completion(db, user_id)
-            quest, content = await self._published_moscow_quest(db, quest_id)
+            quest, content = await self._published_city_quest(db, city_id, quest_id)
             await self._ensure_quest_unlocked(db, user_id, quest)
             completed = await db.get(GameQuestCompletion, (user_id, quest.id))
             stamp = await self._quest_stamp(db, user_id, content)
@@ -717,13 +721,16 @@ class GameProgressService:
                 "stamp": self._stamp_payload(stamp),
             }
 
-    async def answer_moscow_quest(
-        self, user_id: str, quest_id: str, answer_key: str,
+    async def get_moscow_quest(self, user_id: str, quest_id: str) -> dict[str, Any]:
+        return await self.get_city_quest(user_id, "moscow", quest_id)
+
+    async def answer_city_quest(
+        self, user_id: str, city_id: str, quest_id: str, answer_key: str,
     ) -> dict[str, Any]:
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
             await self._backfill_onboarding_completion(db, user_id)
-            quest, content = await self._published_moscow_quest(db, quest_id)
+            quest, content = await self._published_city_quest(db, city_id, quest_id)
             await self._ensure_quest_unlocked(db, user_id, quest)
 
             question = content.payload.get("question", {})
@@ -791,6 +798,11 @@ class GameProgressService:
                 "stamp": self._stamp_payload(stamp),
                 "explanation": explanation,
             }
+
+    async def answer_moscow_quest(
+        self, user_id: str, quest_id: str, answer_key: str,
+    ) -> dict[str, Any]:
+        return await self.answer_city_quest(user_id, "moscow", quest_id, answer_key)
 
     async def _ensure_profile(self, db: AsyncSession, user_id: str) -> GameProfile:
         today = self._today()
@@ -908,8 +920,8 @@ class GameProgressService:
             await GameProgressService._record_onboarding_completion(db, user_id, stamp.earned_at)
         return stamp
 
-    async def _published_moscow_quest(
-        self, db: AsyncSession, quest_id: str,
+    async def _published_city_quest(
+        self, db: AsyncSession, city_id: str, quest_id: str,
     ) -> tuple[GameQuest, GameContentRevision]:
         quest = await db.scalar(
             select(GameQuest)
@@ -917,12 +929,12 @@ class GameProgressService:
             .where(
                 GameQuest.id == quest_id,
                 GameQuest.is_published.is_(True),
-                GameCity.id == "moscow",
+                GameCity.id == city_id,
                 GameCity.is_published.is_(True),
             )
         )
         if quest is None:
-            raise GameContentUnavailableError("Moscow quest is not published")
+            raise GameContentUnavailableError("City quest is not published")
         content = await db.scalar(
             select(GameContentRevision).where(
                 GameContentRevision.id == quest.content_revision_id,
@@ -930,7 +942,7 @@ class GameProgressService:
             )
         )
         if content is None:
-            raise GameContentUnavailableError("Moscow quest content is not published")
+            raise GameContentUnavailableError("City quest content is not published")
         return quest, content
 
     async def _published_moscow_boss(
