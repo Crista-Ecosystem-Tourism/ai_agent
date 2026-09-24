@@ -1008,7 +1008,7 @@ class GameProgressService:
         if translation is None:
             return content.payload, "ru"
         localized = dict(content.payload)
-        for section in ("scene", "fact", "question", "reward"):
+        for section in ("scene", "chris", "fact", "question", "reward"):
             translated_section = translation.payload.get(section)
             if isinstance(translated_section, dict):
                 localized[section] = {**content.payload.get(section, {}), **translated_section}
