@@ -320,8 +320,28 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             [node["id"] for node in st_petersburg["nodes"]],
             ["spb-hermitage", "spb-peterhof", "spb-collection", "spb-fountains", "spb-peterhof-history"],
         )
-        first = await self.game.answer_city_quest(self.user_id, "st-petersburg", "spb-hermitage", "1764")
+        english_lesson = await self.game.get_city_quest(
+            self.user_id, "st-petersburg", "spb-hermitage", "en"
+        )
+        russian_lesson = await self.game.get_city_quest(
+            self.user_id, "st-petersburg", "spb-hermitage", "ru"
+        )
+        self.assertEqual(english_lesson["content_language"], "en")
+        self.assertEqual(english_lesson["content"]["scene"]["title"], "The Hermitage")
+        self.assertIn("1764", english_lesson["content"]["fact"]["text"])
+        self.assertEqual(english_lesson["content"]["fact"]["source_url"], "https://hermitagemuseum.org/about/facts_and_figures")
+        self.assertEqual(
+            [option["id"] for option in english_lesson["content"]["question"]["options"]],
+            ["1703", "1764", "1917"],
+        )
+        self.assertNotIn("correct_option_id", english_lesson["content"]["question"])
+        self.assertEqual(russian_lesson["content_language"], "ru")
+        self.assertEqual(russian_lesson["content"]["scene"]["title"], "Эрмитаж")
+        first = await self.game.answer_city_quest(
+            self.user_id, "st-petersburg", "spb-hermitage", "1764", "en"
+        )
         self.assertEqual(first["xp_awarded"], 25)
+        self.assertIn("The Hermitage dates", first["explanation"])
         second = await self.game.get_city_quest(self.user_id, "st-petersburg", "spb-peterhof")
         self.assertEqual(second["quest"]["id"], "spb-peterhof")
         sochi = await self.game.get_city_path(self.user_id, "sochi")

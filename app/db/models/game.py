@@ -21,6 +21,26 @@ class GameContentRevision(Base, TimestampMixin):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class GameContentTranslation(Base, TimestampMixin):
+    """An immutable localized edition attached to a canonical content revision."""
+
+    __tablename__ = "game_content_translation"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    content_revision_id: Mapped[str] = mapped_column(
+        ForeignKey("game_content_revision.id"), nullable=False
+    )
+    language: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("content_revision_id", "language", name="uq_game_content_translation_locale"),
+        Index("idx_game_content_translation_published", "content_revision_id", "language", "is_published"),
+    )
+
+
 class GameProfile(Base, TimestampMixin):
     __tablename__ = "game_profile"
 

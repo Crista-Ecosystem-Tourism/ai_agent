@@ -13,6 +13,7 @@ from app.db.models.game import (
     GameAttempt,
     GameCity,
     GameContentRevision,
+    GameContentTranslation,
     GameDailyProgress,
     GameDistrict,
     GameProfile,
@@ -743,20 +744,22 @@ class GameProgressService:
                 "feedback": feedback,
             }
 
-    async def get_city_quest(self, user_id: str, city_id: str, quest_id: str) -> dict[str, Any]:
+    async def get_city_quest(self, user_id: str, city_id: str, quest_id: str, language: str = "ru") -> dict[str, Any]:
         """Return a published city lesson only when its server prerequisite is met."""
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
             await self._backfill_onboarding_completion(db, user_id)
             quest, content = await self._published_city_quest(db, city_id, quest_id)
             await self._ensure_quest_unlocked(db, user_id, quest)
+            localized_payload, content_language = await self._localized_content(db, content, language)
             completed = await db.get(GameQuestCompletion, (user_id, quest.id))
             stamp = await self._quest_stamp(db, user_id, content)
             daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
                 "quest": self._quest_payload(quest),
-                "content": self._public_content(content.payload),
+                "content": self._public_content(localized_payload),
+                "content_language": content_language,
                 "profile": self._profile_payload(profile),
                 "daily": daily,
                 "completed": completed is not None,
@@ -767,13 +770,14 @@ class GameProgressService:
         return await self.get_city_quest(user_id, "moscow", quest_id)
 
     async def answer_city_quest(
-        self, user_id: str, city_id: str, quest_id: str, answer_key: str,
+        self, user_id: str, city_id: str, quest_id: str, answer_key: str, language: str = "ru",
     ) -> dict[str, Any]:
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
             await self._backfill_onboarding_completion(db, user_id)
             quest, content = await self._published_city_quest(db, city_id, quest_id)
             await self._ensure_quest_unlocked(db, user_id, quest)
+            localized_payload, _content_language = await self._localized_content(db, content, language)
 
             question = content.payload.get("question", {})
             options = question.get("options", [])
@@ -795,7 +799,7 @@ class GameProgressService:
 
             xp_awarded = 0
             stamp: GameStamp | None = None
-            explanation = self._content_explanation(content.payload)
+            explanation = self._content_explanation(localized_payload)
             if is_correct:
                 reward = content.payload.get("reward", {})
                 stamp_key = reward.get("stamp_key")
@@ -986,6 +990,29 @@ class GameProgressService:
         if content is None:
             raise GameContentUnavailableError("City quest content is not published")
         return quest, content
+
+    @staticmethod
+    async def _localized_content(db: AsyncSession, content: GameContentRevision, language: str) -> tuple[dict[str, Any], str]:
+        """Overlay a published translation for display while canonical answer IDs remain authoritative."""
+        if language == "ru":
+            return content.payload, "ru"
+        if language != "en":
+            return content.payload, "ru"
+        translation = await db.scalar(
+            select(GameContentTranslation).where(
+                GameContentTranslation.content_revision_id == content.id,
+                GameContentTranslation.language == language,
+                GameContentTranslation.is_published.is_(True),
+            )
+        )
+        if translation is None:
+            return content.payload, "ru"
+        localized = dict(content.payload)
+        for section in ("scene", "fact", "question", "reward"):
+            translated_section = translation.payload.get(section)
+            if isinstance(translated_section, dict):
+                localized[section] = {**content.payload.get(section, {}), **translated_section}
+        return localized, language
 
     async def _published_moscow_boss(
         self, db: AsyncSession,

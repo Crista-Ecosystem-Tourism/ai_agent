@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_409_CONFLICT, HTTP_503_SERVICE_UNAVAILABLE
@@ -172,11 +174,12 @@ async def get_city_path(
 async def get_city_quest(
     city_id: str,
     quest_id: str,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.get_city_quest(user["sub"], city_id, quest_id)
+        return await game.get_city_quest(user["sub"], city_id, quest_id, language)
     except GameQuestLockedError:
         raise HTTPException(status_code=HTTP_409_CONFLICT, detail="Сначала заверши предыдущий квест")
     except GameContentUnavailableError:
@@ -188,11 +191,12 @@ async def answer_city_quest(
     city_id: str,
     quest_id: str,
     payload: RedSquareAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.answer_city_quest(user["sub"], city_id, quest_id, payload.answer_key)
+        return await game.answer_city_quest(user["sub"], city_id, quest_id, payload.answer_key, language)
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестный вариант ответа")
     except GameQuestLockedError:
