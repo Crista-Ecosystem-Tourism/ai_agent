@@ -13,3 +13,10 @@ def has_valid_coordinates(latitude: float | None, longitude: float | None) -> bo
         and -90 <= latitude <= 90
         and -180 <= longitude <= 180
     )
+
+
+def belongs_to_city(place_city: str | None, expected_city: str | None) -> bool:
+    """Require a known matching city; unknown provenance is not route-safe."""
+    if not place_city or not expected_city:
+        return False
+    return place_city.strip().casefold() == expected_city.strip().casefold()

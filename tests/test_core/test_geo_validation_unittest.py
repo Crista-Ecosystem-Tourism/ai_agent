@@ -3,7 +3,7 @@
 import math
 import unittest
 
-from app.core.geo_validation import has_valid_coordinates
+from app.core.geo_validation import belongs_to_city, has_valid_coordinates
 
 
 class CoordinateValidationTests(unittest.TestCase):
@@ -24,6 +24,15 @@ class CoordinateValidationTests(unittest.TestCase):
     def test_rejects_coordinates_outside_wgs84_ranges(self):
         self.assertFalse(has_valid_coordinates(90.0001, 37.62))
         self.assertFalse(has_valid_coordinates(55.75, -180.0001))
+
+    def test_city_match_is_case_and_whitespace_insensitive(self):
+        self.assertTrue(belongs_to_city(" Москва ", "москва"))
+
+    def test_city_match_rejects_unknown_or_different_city(self):
+        self.assertFalse(belongs_to_city(None, "Москва"))
+        self.assertFalse(belongs_to_city("", "Москва"))
+        self.assertFalse(belongs_to_city("Сочи", "Москва"))
+        self.assertFalse(belongs_to_city("Москва", None))
 
 
 if __name__ == "__main__":

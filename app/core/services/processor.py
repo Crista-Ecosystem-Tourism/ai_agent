@@ -9,7 +9,7 @@ from app.core.services.places import PlacesSearchService
 from app.core.services.route import RouteService
 
 from app.core.models import TravelDeps, SearchQueries, RerankResult, Itinerary, UserPreferences
-from app.core.geo_validation import has_valid_coordinates
+from app.core.geo_validation import belongs_to_city, has_valid_coordinates
 from app.api.schemas import SearchResult, Place
 
 logger = logging.getLogger(__name__)
@@ -133,13 +133,9 @@ class MessageProcessor:
             return None, None
 
         places = [places_by_id[place_id] for place_id in selected_ids]
-        expected_city = (deps.user_preferences.city or "").strip().casefold()
-        mismatched_places = [
-            place for place in places
-            if expected_city and place.city and place.city.strip().casefold() != expected_city
-        ]
-        if mismatched_places:
-            logger.warning("Itinerary contains POIs outside of the selected city; route skipped")
+        expected_city = deps.user_preferences.city
+        if any(not belongs_to_city(place.city, expected_city) for place in places):
+            logger.warning("Itinerary contains POIs without verified selected-city provenance; route skipped")
             return None, None
 
         # Do not silently drop an itinerary stop: that would make returned geometry
