@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -36,9 +36,13 @@ async def get_my_wiki_drafts(
 
 
 @router.get("/articles/{slug}")
-async def get_wiki_article(slug: str, wiki: WikiService = Depends(get_wiki_service)):
+async def get_wiki_article(
+    slug: str,
+    language: Literal["ru", "en"] = "ru",
+    wiki: WikiService = Depends(get_wiki_service),
+):
     try:
-        return await wiki.get_published(slug)
+        return await wiki.get_published(slug, language)
     except WikiNotFoundError:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Опубликованная статья не найдена")
 

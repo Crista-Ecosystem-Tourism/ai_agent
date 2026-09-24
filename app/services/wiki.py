@@ -19,15 +19,27 @@ class WikiService:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self.session_factory = session_factory
 
-    async def get_published(self, slug: str) -> dict[str, Any]:
+    async def get_published(self, slug: str, language: str = "ru") -> dict[str, Any]:
         async with self.session_factory() as db:
-            article = await db.scalar(select(WikiArticle).where(WikiArticle.slug == slug))
-            if article is None or article.published_version_id is None:
+            candidates = [(f"{slug}-en", "en"), (slug, "ru")] if language == "en" else [(slug, "ru")]
+            article = None
+            version = None
+            content_language = "ru"
+            for candidate_slug, candidate_language in candidates:
+                candidate = await db.scalar(select(WikiArticle).where(WikiArticle.slug == candidate_slug))
+                if candidate is None or candidate.published_version_id is None:
+                    continue
+                published = await db.get(WikiArticleVersion, candidate.published_version_id)
+                if published is None or published.status != "published":
+                    continue
+                article, version, content_language = candidate, published, candidate_language
+                break
+            if article is None or version is None:
                 raise WikiNotFoundError(slug)
-            version = await db.get(WikiArticleVersion, article.published_version_id)
-            if version is None or version.status != "published":
-                raise WikiNotFoundError(slug)
-            return self._public_version(article, version)
+            result = self._public_version(article, version)
+            result["slug"] = slug
+            result["content_language"] = content_language
+            return result
 
     async def get_published_version(self, version_id: str) -> dict[str, Any]:
         async with self.session_factory() as db:

@@ -308,6 +308,33 @@ class CityPilotSeedStaticTests(unittest.TestCase):
         self.assertTrue(all(source["label"].strip() for source in sources))
         self.assertEqual(assigned_literal(migration, "LICENSE"), canonical["license"])
 
+    def test_english_country_wiki_editions_preserve_source_urls(self):
+        migration = "z9a0b1c2d3e4_publish_english_country_wiki.py"
+        editions = assigned_literal(migration, "EDITIONS")
+        self.assertEqual({edition["country"] for edition in editions}, {"ru", "jp", "ge"})
+        canonical_migrations = {
+            "ru": ("v1d2e3f4a5b_publish_russia_wiki_article.py", "wiki-country-ru-v1"),
+            "jp": ("t9b0c1d2e3f4_publish_japan_wiki_article.py", "wiki-country-jp-v1"),
+            "ge": ("u0c1d2e3f4a_publish_georgia_wiki_article.py", "wiki-country-ge-v1"),
+        }
+        for edition in editions:
+            filename, version_id = canonical_migrations[edition["country"]]
+            canonical = dict_literal_with_key(filename, version_id, ("body", "sources", "license"))
+            self.assertTrue(edition["title"].strip(), edition["country"])
+            self.assertEqual(
+                [source["url"] for source in edition["sources"]],
+                [source["url"] for source in canonical["sources"]],
+                edition["country"],
+            )
+            for field in ("summary", "history", "cuisine", "traditions"):
+                self.assertTrue(edition["body"][field].strip(), (edition["country"], field))
+            self.assertTrue(all(
+                row["label"].strip() and row["value"].strip()
+                for row in edition["body"]["practical"]
+            ), edition["country"])
+        self.assertEqual(assigned_literal(migration, "LICENSE"), "CC BY 4.0")
+        self.assertEqual(assigned_literal(migration, "down_revision"), "z8f9a0b1c2d3")
+
 
 if __name__ == "__main__":
     unittest.main()
