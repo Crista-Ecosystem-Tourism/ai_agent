@@ -1,7 +1,6 @@
 import re
 import json
 import logging
-import math
 from dataclasses import dataclass, field
 from typing import List, Union, Optional, Any
 
@@ -10,6 +9,7 @@ from app.core.services.places import PlacesSearchService
 from app.core.services.route import RouteService
 
 from app.core.models import TravelDeps, SearchQueries, RerankResult, Itinerary, UserPreferences
+from app.core.geo_validation import has_valid_coordinates
 from app.api.schemas import SearchResult, Place
 
 logger = logging.getLogger(__name__)
@@ -146,14 +146,7 @@ class MessageProcessor:
         # look like the complete itinerary while omitting a selected destination.
         unlocated_places = [
             place for place in places
-            if (
-                place.latitude is None
-                or place.longitude is None
-                or not math.isfinite(place.latitude)
-                or not math.isfinite(place.longitude)
-                or not -90 <= place.latitude <= 90
-                or not -180 <= place.longitude <= 180
-            )
+            if not has_valid_coordinates(place.latitude, place.longitude)
         ]
         if unlocated_places:
             logger.warning("Itinerary contains POIs without valid coordinates; route skipped")
