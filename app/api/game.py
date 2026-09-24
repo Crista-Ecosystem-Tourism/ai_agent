@@ -251,12 +251,13 @@ async def get_moscow_sandbox(
 @router.post("/paths/moscow/sandbox/truth-myth/answer")
 async def answer_moscow_truth_myth(
     payload: TruthMythAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
         return await game.answer_moscow_truth_myth(
-            user["sub"], payload.statement_id, payload.answer_key,
+            user["sub"], payload.statement_id, payload.answer_key, language,
         )
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестный ответ для упражнения")
@@ -275,12 +276,13 @@ async def answer_moscow_truth_myth(
 @router.post("/paths/moscow/sandbox/matching/answer")
 async def answer_moscow_matching(
     payload: MoscowMatchingAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
         return await game.answer_moscow_matching(
-            user["sub"], [answer.model_dump() for answer in payload.answers],
+            user["sub"], [answer.model_dump() for answer in payload.answers], language,
         )
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Нужно сопоставить все три карточки")
@@ -299,11 +301,12 @@ async def answer_moscow_matching(
 @router.post("/paths/moscow/sandbox/timeline/answer")
 async def answer_moscow_timeline(
     payload: MoscowTimelineAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.answer_moscow_timeline(user["sub"], payload.ordered_ids)
+        return await game.answer_moscow_timeline(user["sub"], payload.ordered_ids, language)
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Нужно расставить все три события")
     except GameQuestLockedError:
@@ -321,11 +324,12 @@ async def answer_moscow_timeline(
 @router.post("/paths/moscow/sandbox/word-blocks/answer")
 async def answer_moscow_word_blocks(
     payload: MoscowWordBlocksAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.answer_moscow_word_blocks(user["sub"], payload.ordered_ids)
+        return await game.answer_moscow_word_blocks(user["sub"], payload.ordered_ids, language)
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Нужно собрать все четыре слова")
     except GameQuestLockedError:
@@ -343,11 +347,12 @@ async def answer_moscow_word_blocks(
 @router.post("/paths/moscow/sandbox/price-slider/answer")
 async def answer_moscow_price_slider(
     payload: MoscowPriceSliderAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.answer_moscow_price_slider(user["sub"], payload.value)
+        return await game.answer_moscow_price_slider(user["sub"], payload.value, language)
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Значение вне диапазона упражнения")
     except GameQuestLockedError:
@@ -386,11 +391,12 @@ async def restore_moscow_energy(
 @router.post("/paths/moscow/sandbox/photo-scanner/answer")
 async def answer_moscow_photo_scanner(
     payload: MoscowPhotoScannerAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.answer_moscow_photo_scanner(user["sub"], payload.hotspot_id)
+        return await game.answer_moscow_photo_scanner(user["sub"], payload.hotspot_id, language)
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестная область фотографии")
     except GameQuestLockedError:

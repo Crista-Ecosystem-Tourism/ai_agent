@@ -228,6 +228,49 @@ class CityPilotSeedStaticTests(unittest.TestCase):
         for key in ("title", "eyebrow", "image_alt", "media_credit", "fact", "source_label", "note"):
             self.assertTrue(translated[key].strip(), key)
 
+    def test_moscow_sandbox_activity_edition_keeps_ids_and_scoring_canonical(self):
+        translated = assigned_literal(
+            "z7f8a9b0c1d_localize_moscow_sandbox_activities.py", "activity_payload"
+        )
+        self.assertEqual(set(translated), {
+            "truth_myth", "matching", "timeline", "word_blocks", "price_slider", "photo_scanner",
+        })
+        self.assertEqual(
+            {item["id"] for item in translated["truth_myth"]["statements"]},
+            {"zaryadye-2017", "metro-1954", "gum-1893"},
+        )
+        self.assertEqual(
+            {item["id"] for item in translated["matching"]["pairs"]},
+            {"cathedral-year", "gum-year", "vdnh-year"},
+        )
+        self.assertEqual(
+            {item["id"] for item in translated["matching"]["choices"]},
+            {"year-1489", "year-1893", "year-1939"},
+        )
+        self.assertEqual(
+            {item["id"] for item in translated["timeline"]["items"]},
+            {"metro-1935", "gum-1893", "vdnh-1939"},
+        )
+        self.assertEqual(
+            {item["id"] for item in translated["word_blocks"]["blocks"]},
+            {"word-capital", "word-russia", "word-moscow", "word-dash"},
+        )
+        for section, collection, key in (
+            ("truth_myth", "statements", "text"), ("matching", "pairs", "left"),
+            ("matching", "choices", "label"), ("timeline", "items", "label"),
+            ("word_blocks", "blocks", "label"),
+        ):
+            self.assertTrue(all(item[key].strip() for item in translated[section][collection]))
+        for section in ("truth_myth", "matching", "timeline", "word_blocks", "price_slider", "photo_scanner"):
+            self.assertTrue(translated[section].get("title", "").strip(), section)
+            self.assertNotIn("correct_answer", translated[section], section)
+            self.assertNotIn("correct_choice_id", translated[section], section)
+            self.assertNotIn("expected_order", translated[section], section)
+            self.assertNotIn("target", translated[section], section)
+            self.assertNotIn("tolerance", translated[section], section)
+            self.assertNotIn("hotspots", translated[section], section)
+            self.assertNotIn("source_url", translated[section], section)
+
 
 if __name__ == "__main__":
     unittest.main()

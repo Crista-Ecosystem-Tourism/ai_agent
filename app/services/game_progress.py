@@ -322,24 +322,32 @@ class GameProgressService:
                 "city": {"id": city.id, "name": city.name},
                 "content_language": content_language,
                 "lesson_content_language": "en" if lesson_languages and all(item == "en" for item in lesson_languages) else "ru",
-                "activity_content_language": "ru",
+                "activity_content_language": (
+                    "en" if language == "en" and all(
+                        isinstance(localized_drill.get(section), dict)
+                        for section in (
+                            "truth_myth", "matching", "timeline", "word_blocks",
+                            "price_slider", "photo_scanner",
+                        )
+                    ) else "ru"
+                ),
                 "wiki_content_language": "ru" if wiki_reference else None,
                 "profile": self._profile_payload(profile),
                 "city_stamp": self._stamp_payload(city_stamp),
                 "lessons": lessons,
-                "drill": self._public_truth_myth_drill(drill.payload) if drill else None,
-                "matching": self._public_matching_drill(drill.payload) if drill else None,
-                "timeline": self._public_timeline_drill(drill.payload) if drill else None,
-                "word_blocks": self._public_word_blocks_drill(drill.payload) if drill else None,
-                "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
+                "drill": self._public_truth_myth_drill(localized_drill) if drill else None,
+                "matching": self._public_matching_drill(localized_drill) if drill else None,
+                "timeline": self._public_timeline_drill(localized_drill) if drill else None,
+                "word_blocks": self._public_word_blocks_drill(localized_drill) if drill else None,
+                "price_slider": self._public_price_slider_drill(localized_drill) if drill else None,
                 "story": self._public_story_card(localized_drill) if drill else None,
-                "photo_scanner": self._public_photo_scanner_drill(drill.payload) if drill else None,
+                "photo_scanner": self._public_photo_scanner_drill(localized_drill) if drill else None,
                 "wiki_reference": wiki_reference,
                 "practice_recovery": self._practice_recovery_payload(profile),
             }
 
     async def answer_moscow_truth_myth(
-        self, user_id: str, statement_id: str, answer_key: str,
+        self, user_id: str, statement_id: str, answer_key: str, language: str = "ru",
     ) -> dict[str, Any]:
         """Check an optional sandbox drill without awarding XP or spending energy."""
         async with self.session_factory() as db:
@@ -351,12 +359,18 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow truth-or-myth drill is not published")
+            localized_payload, _content_language = await self._localized_content(db, content, language)
             truth_myth = self._truth_myth_payload(content.payload)
+            localized_truth_myth = self._truth_myth_payload(localized_payload)
             statements = truth_myth.get("statements")
             if not isinstance(statements, list):
                 raise GameContentUnavailableError("Moscow truth-or-myth drill is invalid")
             statement = next(
                 (item for item in statements if item.get("id") == statement_id), None,
+            )
+            localized_statement = next(
+                (item for item in localized_truth_myth.get("statements", []) if item.get("id") == statement_id),
+                {},
             )
             if not isinstance(statement, dict) or answer_key not in {"truth", "myth"}:
                 raise ValueError("Unknown sandbox answer")
@@ -377,7 +391,7 @@ class GameProgressService:
             await db.commit()
             return {
                 "correct": is_correct,
-                "explanation": statement.get("explanation", "Проверьте источник утверждения."),
+                "explanation": localized_statement.get("explanation", statement.get("explanation", "Проверьте источник утверждения.")),
                 "profile": self._profile_payload(profile),
             }
 
@@ -394,7 +408,9 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow matching drill is not published")
+            localized_payload, _content_language = await self._localized_content(db, content, language)
             matching = self._matching_payload(content.payload)
+            localized_matching = self._matching_payload(localized_payload)
             pairs = matching.get("pairs") if matching else None
             choices = matching.get("choices") if matching else None
             if not isinstance(pairs, list) or not isinstance(choices, list) or len(pairs) != 3:
@@ -415,6 +431,11 @@ class GameProgressService:
             now = self._now()
             feedback = []
             incorrect_pairs = []
+            localized_pairs = {
+                pair.get("id"): pair
+                for pair in (localized_matching or {}).get("pairs", [])
+                if isinstance(pair, dict)
+            }
             for pair in pairs:
                 if not isinstance(pair, dict):
                     raise GameContentUnavailableError("Moscow matching pair is invalid")
@@ -428,7 +449,7 @@ class GameProgressService:
                 feedback.append({
                     "pair_id": pair_id,
                     "correct": is_correct,
-                    "explanation": pair.get("explanation", "Проверьте связь места и даты."),
+                    "explanation": localized_pairs.get(pair_id, {}).get("explanation", pair.get("explanation", "Проверьте связь места и даты.")),
                 })
                 db.add(GameAttempt(
                     id=uuid.uuid4().hex,
@@ -448,7 +469,7 @@ class GameProgressService:
             }
 
     async def answer_moscow_timeline(
-        self, user_id: str, ordered_ids: list[str],
+        self, user_id: str, ordered_ids: list[str], language: str = "ru",
     ) -> dict[str, Any]:
         """Check a sandbox chronology without spending energy or awarding XP."""
         async with self.session_factory() as db:
@@ -460,7 +481,9 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow timeline drill is not published")
+            localized_payload, _content_language = await self._localized_content(db, content, language)
             timeline = self._timeline_payload(content.payload)
+            localized_timeline = self._timeline_payload(localized_payload)
             items = timeline.get("items") if timeline else None
             if not isinstance(items, list) or len(items) != 3:
                 raise GameContentUnavailableError("Moscow timeline drill is invalid")
@@ -477,6 +500,11 @@ class GameProgressService:
             is_correct = ordered_ids == expected_ids
             now = self._now()
             item_by_id = {item.get("id"): item for item in items if isinstance(item, dict)}
+            localized_items = {
+                item.get("id"): item
+                for item in (localized_timeline or {}).get("items", [])
+                if isinstance(item, dict)
+            }
             feedback = []
             for position, item_id in enumerate(ordered_ids, start=1):
                 item = item_by_id[item_id]
@@ -485,7 +513,7 @@ class GameProgressService:
                 feedback.append({
                     "item_id": item_id,
                     "correct": item_correct,
-                    "explanation": item.get("explanation", "Проверьте дату события."),
+                    "explanation": localized_items.get(item_id, {}).get("explanation", item.get("explanation", "Проверьте дату события.")),
                 })
                 db.add(GameAttempt(
                     id=uuid.uuid4().hex,
@@ -505,7 +533,7 @@ class GameProgressService:
             }
 
     async def answer_moscow_word_blocks(
-        self, user_id: str, ordered_ids: list[str],
+        self, user_id: str, ordered_ids: list[str], language: str = "ru",
     ) -> dict[str, Any]:
         """Check a sandbox word-order exercise without spending energy or XP."""
         async with self.session_factory() as db:
@@ -517,7 +545,9 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow word-blocks drill is not published")
+            localized_payload, _content_language = await self._localized_content(db, content, language)
             word_blocks = self._word_blocks_payload(content.payload)
+            localized_word_blocks = self._word_blocks_payload(localized_payload)
             blocks = word_blocks.get("blocks") if word_blocks else None
             expected_order = word_blocks.get("expected_order") if word_blocks else None
             if not isinstance(blocks, list) or not isinstance(expected_order, list) or len(blocks) != 4:
@@ -542,11 +572,11 @@ class GameProgressService:
             await db.commit()
             return {
                 "correct": is_correct,
-                "explanation": word_blocks.get("explanation", "Проверьте порядок слов и повторите попытку."),
+                "explanation": (localized_word_blocks or {}).get("explanation", word_blocks.get("explanation", "Проверьте порядок слов и повторите попытку.")),
                 "profile": self._profile_payload(profile),
             }
 
-    async def answer_moscow_price_slider(self, user_id: str, value: int) -> dict[str, Any]:
+    async def answer_moscow_price_slider(self, user_id: str, value: int, language: str = "ru") -> dict[str, Any]:
         """Check a historic-price estimate without changing sandbox rewards or energy."""
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
@@ -557,7 +587,9 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow price-slider drill is not published")
+            localized_payload, _content_language = await self._localized_content(db, content, language)
             price_slider = self._price_slider_payload(content.payload)
+            localized_price_slider = self._price_slider_payload(localized_payload)
             if price_slider is None:
                 raise GameContentUnavailableError("Moscow price-slider drill is invalid")
             minimum = price_slider.get("min")
@@ -584,11 +616,11 @@ class GameProgressService:
             await db.commit()
             return {
                 "correct": is_correct,
-                "explanation": price_slider.get("explanation", "Проверьте цену в источнике упражнения."),
+                "explanation": (localized_price_slider or {}).get("explanation", price_slider.get("explanation", "Проверьте цену в источнике упражнения.")),
                 "profile": self._profile_payload(profile),
             }
 
-    async def answer_moscow_photo_scanner(self, user_id: str, hotspot_id: str) -> dict[str, Any]:
+    async def answer_moscow_photo_scanner(self, user_id: str, hotspot_id: str, language: str = "ru") -> dict[str, Any]:
         """Check a photograph hotspot on the server without changing sandbox rewards or energy."""
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
@@ -599,7 +631,9 @@ class GameProgressService:
             content = await self._published_moscow_sandbox_content(db, city)
             if content is None:
                 raise GameContentUnavailableError("Moscow photo-scanner drill is not published")
+            localized_payload, _content_language = await self._localized_content(db, content, language)
             scanner = self._photo_scanner_payload(content.payload)
+            localized_scanner = self._photo_scanner_payload(localized_payload)
             hotspots = scanner.get("hotspots") if scanner else None
             correct_hotspot_id = scanner.get("correct_hotspot_id") if scanner else None
             hotspot_ids = {item.get("id") for item in hotspots if isinstance(item, dict)} if isinstance(hotspots, list) else set()
@@ -620,7 +654,7 @@ class GameProgressService:
             await db.commit()
             return {
                 "correct": is_correct,
-                "explanation": scanner.get("explanation", "Сверь деталь со снимком и источником."),
+                "explanation": (localized_scanner or {}).get("explanation", scanner.get("explanation", "Сверь деталь со снимком и источником.")),
                 "profile": self._profile_payload(profile),
             }
 
@@ -1030,7 +1064,10 @@ class GameProgressService:
         if translation is None:
             return content.payload, "ru"
         localized = dict(content.payload)
-        for section in ("scene", "chris", "fact", "question", "questions", "sources", "reward", "story"):
+        for section in (
+            "scene", "chris", "fact", "question", "questions", "sources", "reward", "story",
+            "truth_myth", "matching", "timeline", "word_blocks", "price_slider", "photo_scanner",
+        ):
             translated_section = translation.payload.get(section)
             if isinstance(translated_section, dict):
                 localized[section] = {**content.payload.get(section, {}), **translated_section}
