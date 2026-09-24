@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED, HTTP_409_CONFLICT
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 
 from app.security.jwt import create_access_token
 from app.security.password import hash_password, verify_password
@@ -54,6 +54,15 @@ class UserOut(BaseModel):
 class AuthOut(BaseModel):
     access_token: str
     user: UserOut
+
+
+class UserPreferencesIn(BaseModel):
+    theme: str = Field(..., pattern="^(light|dark)$")
+    language: str = Field(..., pattern="^(ru|en)$")
+
+
+class UserPreferencesOut(UserPreferencesIn):
+    pass
 
 
 # ---------- endpoints ----------
@@ -132,3 +141,28 @@ async def me(
         name=user_data["name"],
         is_editor=user_data["is_editor"],
     )
+
+
+@router.get("/preferences", response_model=UserPreferencesOut)
+async def get_preferences(
+    current_user: dict = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+):
+    preferences = await user_service.get_preferences(current_user["sub"])
+    if preferences is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    return UserPreferencesOut(**preferences)
+
+
+@router.put("/preferences", response_model=UserPreferencesOut)
+async def set_preferences(
+    payload: UserPreferencesIn,
+    current_user: dict = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+):
+    preferences = await user_service.set_preferences(
+        current_user["sub"], payload.theme, payload.language
+    )
+    if preferences is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    return UserPreferencesOut(**preferences)

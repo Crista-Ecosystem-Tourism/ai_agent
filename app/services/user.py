@@ -75,6 +75,29 @@ class UserService:
                 return None
             return {"granted": row.vision_consent_granted, "policy_version": row.vision_consent_version}
 
+    async def get_preferences(self, user_id: str) -> Optional[dict]:
+        async with self.session_factory() as db:
+            row = (await db.execute(
+                select(User.preferred_theme, User.preferred_language).where(User.id == user_id)
+            )).one_or_none()
+            if row is None:
+                return None
+            return {"theme": row.preferred_theme, "language": row.preferred_language}
+
+    async def set_preferences(self, user_id: str, theme: str, language: str) -> Optional[dict]:
+        async with self.session_factory() as db:
+            result = await db.execute(
+                update(User).where(User.id == user_id).values(
+                    preferred_theme=theme,
+                    preferred_language=language,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            if result.rowcount != 1:
+                return None
+            await db.commit()
+        return {"theme": theme, "language": language}
+
     async def set_vision_consent(self, user_id: str, granted: bool, policy_version: str) -> Optional[dict]:
         async with self.session_factory() as db:
             result = await db.execute(
