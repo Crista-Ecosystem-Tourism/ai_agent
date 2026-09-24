@@ -246,19 +246,21 @@ class GameProgressService:
     async def get_moscow_path(self, user_id: str) -> dict[str, Any]:
         return await self.get_city_path(user_id, "moscow")
 
-    async def get_moscow_boss(self, user_id: str) -> dict[str, Any]:
+    async def get_moscow_boss(self, user_id: str, language: str = "ru") -> dict[str, Any]:
         """Return the city boss only after every published Moscow node is complete."""
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
             await self._backfill_onboarding_completion(db, user_id)
             city, content = await self._published_moscow_boss(db)
             await self._ensure_city_boss_unlocked(db, user_id, city)
+            localized_payload, content_language = await self._localized_content(db, content, language)
             city_stamp = await self._city_stamp(db, user_id, city)
             daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
                 "city": {"id": city.id, "name": city.name},
-                "content": self._public_content(content.payload),
+                "content": self._public_content(localized_payload),
+                "content_language": content_language,
                 "profile": self._profile_payload(profile),
                 "daily": daily,
                 "completed": city_stamp is not None,
@@ -370,7 +372,7 @@ class GameProgressService:
             }
 
     async def answer_moscow_matching(
-        self, user_id: str, answers: list[dict[str, str]],
+        self, user_id: str, answers: list[dict[str, str]], language: str = "ru",
     ) -> dict[str, Any]:
         """Check sandbox matching on the server without changing energy or XP."""
         async with self.session_factory() as db:
@@ -663,7 +665,7 @@ class GameProgressService:
             }
 
     async def answer_moscow_boss(
-        self, user_id: str, answers: list[dict[str, str]],
+        self, user_id: str, answers: list[dict[str, str]], language: str = "ru",
     ) -> dict[str, Any]:
         """Check all three boss answers on the server and award the city stamp once."""
         async with self.session_factory() as db:
@@ -671,6 +673,7 @@ class GameProgressService:
             await self._backfill_onboarding_completion(db, user_id)
             city, content = await self._published_moscow_boss(db)
             await self._ensure_city_boss_unlocked(db, user_id, city)
+            localized_payload, _content_language = await self._localized_content(db, content, language)
 
             questions = content.payload.get("questions")
             if not isinstance(questions, list) or len(questions) != 3:
@@ -687,6 +690,11 @@ class GameProgressService:
             now = self._now()
             incorrect_answers = 0
             feedback = []
+            localized_questions = {
+                question.get("id"): question
+                for question in localized_payload.get("questions", [])
+                if isinstance(question, dict)
+            }
             for question in questions:
                 question_id = question.get("id")
                 options = question.get("options", [])
@@ -700,7 +708,9 @@ class GameProgressService:
                 feedback.append({
                     "question_id": question_id,
                     "correct": is_correct,
-                    "explanation": question.get("explanation", "Ответ подтверждается источником урока."),
+                    "explanation": localized_questions.get(question_id, {}).get(
+                        "explanation", question.get("explanation", "Ответ подтверждается источником урока.")
+                    ),
                 })
                 db.add(GameAttempt(
                     id=uuid.uuid4().hex,
@@ -1010,7 +1020,7 @@ class GameProgressService:
         if translation is None:
             return content.payload, "ru"
         localized = dict(content.payload)
-        for section in ("scene", "chris", "fact", "question", "reward"):
+        for section in ("scene", "chris", "fact", "question", "questions", "sources", "reward"):
             translated_section = translation.payload.get(section)
             if isinstance(translated_section, dict):
                 localized[section] = {**content.payload.get(section, {}), **translated_section}

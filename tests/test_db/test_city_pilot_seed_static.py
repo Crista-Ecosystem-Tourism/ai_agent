@@ -191,6 +191,30 @@ class CityPilotSeedStaticTests(unittest.TestCase):
             self.assertIn(question["correct_option_id"], translated_options, quest_id)
             self.assertTrue(canonical[quest_id]["fact"]["source_url"].startswith("https://"), quest_id)
 
+    def test_moscow_boss_english_edition_keeps_questions_answers_and_sources(self):
+        translated = assigned_literal(
+            "z5d6e7f8a9b_add_moscow_boss_english_edition.py", "payload"
+        )
+        canonical = content_payload(
+            "f9a0b1c2d3e4_add_moscow_city_boss.py", "moscow-city-boss-v1"
+        )
+        expected_questions = {question["id"]: question for question in canonical["questions"]}
+        self.assertEqual({question["id"] for question in translated["questions"]}, set(expected_questions))
+        for question in translated["questions"]:
+            source = expected_questions[question["id"]]
+            self.assertTrue(question["text"].strip(), question["id"])
+            self.assertNotIn("correct_option_id", question)
+            self.assertEqual(
+                {option[0] for option in question["options"]},
+                {option["id"] for option in source["options"]},
+                question["id"],
+            )
+            self.assertTrue(question["explanation"].strip(), question["id"])
+        self.assertEqual(
+            [source["url"] for source in translated["sources"]],
+            [source["url"] for source in canonical["sources"]],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

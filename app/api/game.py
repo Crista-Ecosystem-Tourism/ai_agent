@@ -210,11 +210,12 @@ async def answer_city_quest(
 
 @router.get("/paths/moscow/boss")
 async def get_moscow_boss(
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.get_moscow_boss(user["sub"])
+        return await game.get_moscow_boss(user["sub"], language)
     except GameQuestLockedError:
         raise HTTPException(
             status_code=HTTP_409_CONFLICT,
@@ -406,12 +407,13 @@ async def answer_moscow_photo_scanner(
 @router.post("/paths/moscow/boss/answer")
 async def answer_moscow_boss(
     payload: MoscowBossAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
         return await game.answer_moscow_boss(
-            user["sub"], [answer.model_dump() for answer in payload.answers],
+            user["sub"], [answer.model_dump() for answer in payload.answers], language,
         )
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Нужно ответить на все три вопроса")
