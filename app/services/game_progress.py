@@ -766,8 +766,8 @@ class GameProgressService:
                 "stamp": self._stamp_payload(stamp),
             }
 
-    async def get_moscow_quest(self, user_id: str, quest_id: str) -> dict[str, Any]:
-        return await self.get_city_quest(user_id, "moscow", quest_id)
+    async def get_moscow_quest(self, user_id: str, quest_id: str, language: str = "ru") -> dict[str, Any]:
+        return await self.get_city_quest(user_id, "moscow", quest_id, language)
 
     async def answer_city_quest(
         self, user_id: str, city_id: str, quest_id: str, answer_key: str, language: str = "ru",
@@ -846,9 +846,9 @@ class GameProgressService:
             }
 
     async def answer_moscow_quest(
-        self, user_id: str, quest_id: str, answer_key: str,
+        self, user_id: str, quest_id: str, answer_key: str, language: str = "ru",
     ) -> dict[str, Any]:
-        return await self.answer_city_quest(user_id, "moscow", quest_id, answer_key)
+        return await self.answer_city_quest(user_id, "moscow", quest_id, answer_key, language)
 
     async def _ensure_profile(self, db: AsyncSession, user_id: str) -> GameProfile:
         today = self._today()

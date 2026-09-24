@@ -115,11 +115,12 @@ async def get_moscow_path(
 @router.get("/paths/moscow/quests/{quest_id}")
 async def get_moscow_quest(
     quest_id: str,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.get_moscow_quest(user["sub"], quest_id)
+        return await game.get_moscow_quest(user["sub"], quest_id, language)
     except GameQuestLockedError:
         raise HTTPException(
             status_code=HTTP_409_CONFLICT,
@@ -136,11 +137,12 @@ async def get_moscow_quest(
 async def answer_moscow_quest(
     quest_id: str,
     payload: RedSquareAnswerIn,
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.answer_moscow_quest(user["sub"], quest_id, payload.answer_key)
+        return await game.answer_moscow_quest(user["sub"], quest_id, payload.answer_key, language)
     except ValueError:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Неизвестный вариант ответа")
     except GameQuestLockedError:
