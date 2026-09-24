@@ -69,6 +69,24 @@ class CityPilotSeedStaticTests(unittest.TestCase):
         expected_timeline = {"spb-peterhof", "sochi-dendrarium"}
         self.assertEqual({row[1] for row in truth_myth}, expected_truth)
         self.assertEqual({row[1] for row in timelines}, expected_timeline)
+        for row in truth_myth:
+            quest_id, fact_text, source_url = row[1], row[4], row[6]
+            correct_option_id = row[8]
+            self.assertEqual(correct_option_id, "fact", quest_id)
+            self.assertIn("относится к 1705 году" if quest_id.startswith("spb-") else "214 098,6", fact_text)
+            self.assertTrue(source_url.startswith("https://"), quest_id)
+
+        expected_timeline_answers = {
+            "spb-peterhof": ("1723", "15 августа 1723 года"),
+            "sochi-dendrarium": ("1892", "завершены в 1892 году"),
+        }
+        for row in timelines:
+            quest_id, fact_text, source_url = row[1], row[4], row[6]
+            correct_answer, supported_phrase = expected_timeline_answers[quest_id]
+            self.assertEqual(row[8], correct_answer, quest_id)
+            self.assertIn(correct_answer, row[9], quest_id)
+            self.assertIn(supported_phrase, fact_text, quest_id)
+            self.assertTrue(source_url.startswith("https://"), quest_id)
 
 
 if __name__ == "__main__":
