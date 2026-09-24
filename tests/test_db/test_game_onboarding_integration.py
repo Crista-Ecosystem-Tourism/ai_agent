@@ -248,6 +248,10 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sandbox["story"]["title"], "Сцена: Красная площадь")
         self.assertIn("иллюстрация", sandbox["story"]["media_credit"].lower())
         self.assertEqual(sandbox["wiki_reference"], {"slug": "moscow", "version_id": "wiki-moscow-v1"})
+        self.assertEqual(
+            {lesson["wiki_reference"]["version_id"] for lesson in sandbox["lessons"]},
+            {"wiki-moscow-v1"},
+        )
         self.assertEqual(sandbox["photo_scanner"]["title"], "Фото-сканер: Кремлёвская стена")
         self.assertEqual(len(sandbox["photo_scanner"]["hotspots"]), 3)
         self.assertNotIn("correct_hotspot_id", sandbox["photo_scanner"])

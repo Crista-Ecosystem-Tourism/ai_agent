@@ -287,6 +287,7 @@ class GameProgressService:
                     )
                 )).all()
             }
+            wiki_reference = self._public_wiki_reference(drill.payload) if drill else None
             lessons = []
             for quest in quests:
                 content = contents.get(quest.content_revision_id)
@@ -303,6 +304,7 @@ class GameProgressService:
                     "fact": fact,
                     "question": public_content.get("question", {}),
                     "explanation": self._content_explanation(content.payload),
+                    "wiki_reference": wiki_reference,
                 })
             await db.commit()
             return {
@@ -317,7 +319,7 @@ class GameProgressService:
                 "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
                 "story": self._public_story_card(drill.payload) if drill else None,
                 "photo_scanner": self._public_photo_scanner_drill(drill.payload) if drill else None,
-                "wiki_reference": self._public_wiki_reference(drill.payload) if drill else None,
+                "wiki_reference": wiki_reference,
                 "practice_recovery": self._practice_recovery_payload(profile),
             }
 
