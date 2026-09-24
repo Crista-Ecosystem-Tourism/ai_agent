@@ -123,6 +123,11 @@ def mock_route_response() -> dict:
                     "geometry": {"type": "Point", "coordinates": [37.6208, 55.7539]},
                     "properties": {"name": "Красная площадь", "weight": 4.8},
                 },
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": [[37.6208, 55.7539], [37.6031, 55.7312]]},
+                    "properties": {"type": "edge"},
+                },
             ],
         },
     }

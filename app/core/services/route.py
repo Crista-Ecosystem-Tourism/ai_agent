@@ -9,6 +9,7 @@ import httpx
 
 from app.api.schemas import Place
 from app.config.agent_settings import ROUTE_CONFIG
+from app.core.route_validation import has_renderable_route_line
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +110,15 @@ class RouteService:
         return response.json()
 
     @staticmethod
-    def _parse_response(data: dict) -> RouteResult:
-        """Распарсить ответ placesweb_backend в RouteResult."""
+    def _parse_response(data: dict) -> Optional[RouteResult]:
+        """Parse only responses containing renderable route geometry."""
+        geojson = data.get("geojson")
+        if not has_renderable_route_line(geojson):
+            logger.warning("Routing service returned no valid LineString geometry")
+            return None
         alternatives = data.get("alternatives") or []
         return RouteResult(
-            geojson=data.get("geojson", {}),
+            geojson=geojson,
             graph_id=data.get("graph_id", ""),
             build_time_seconds=data.get("build_time_seconds", 0.0),
             metrics=data.get("metrics", {}),
