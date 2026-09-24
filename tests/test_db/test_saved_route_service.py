@@ -44,8 +44,11 @@ class TestCreate:
             "session_id": "session-123",
             "places": [{"id": "p1"}],
             "graph_geojson": {"type": "FeatureCollection", "features": []},
+            "route_geojson": {"type": "FeatureCollection", "features": [{"type": "Feature"}]},
         })
         assert isinstance(route_id, str)
+        insert_statement = route_service._mock_db.execute.call_args.args[0]
+        assert "route_geojson" in insert_statement.compile().params
 
 
 class TestListForUser:
@@ -86,6 +89,7 @@ class TestGetOwned:
         mock_row.session_id = None
         mock_row.places = [{"id": "p1"}]
         mock_row.graph_geojson = None
+        mock_row.route_geojson = {"type": "FeatureCollection", "features": []}
         mock_row.created_at = MagicMock(isoformat=MagicMock(return_value="2026-01-01T00:00:00"))
         mock_row.updated_at = MagicMock(isoformat=MagicMock(return_value="2026-01-02T00:00:00"))
 
@@ -96,6 +100,7 @@ class TestGetOwned:
         assert result is not None
         assert result["id"] == "r1"
         assert result["places"] == [{"id": "p1"}]
+        assert result["route_geojson"]["type"] == "FeatureCollection"
 
     @pytest.mark.asyncio
     async def test_get_owned_wrong_user(self, route_service):

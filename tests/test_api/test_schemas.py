@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.api.schemas import MessageOut, SearchResult, Place
+from app.api.schemas import MessageOut, SearchResult, Place, SavedRouteOut
 
 
 # ---------------------------------------------------------------------------
@@ -92,3 +92,16 @@ def test_place_to_dict():
     assert data["longitude"] == 37.62
     assert data["rating"] == 4.5
     assert data["city"] == "Москва"
+
+
+def test_saved_route_geometry_fields_are_independent():
+    route = SavedRouteOut(
+        id="r1",
+        name="Пеший маршрут",
+        destination="Москва",
+        places=[],
+        graph_geojson={"type": "FeatureCollection", "features": [{"properties": {"type": "edge"}}]},
+        route_geojson={"type": "FeatureCollection", "features": [{"properties": {"source": "placesweb"}}]},
+    )
+    assert route.graph_geojson["features"][0]["properties"]["type"] == "edge"
+    assert route.route_geojson["features"][0]["properties"]["source"] == "placesweb"

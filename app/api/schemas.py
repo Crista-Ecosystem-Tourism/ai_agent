@@ -124,6 +124,7 @@ class SavedRouteCreate(BaseModel):
     session_id: Optional[str] = None
     places: list[dict] = Field(...)
     graph_geojson: Optional[dict] = None
+    route_geojson: Optional[dict] = None
 
 class SavedRouteOut(BaseModel):
     id: str
@@ -132,6 +133,7 @@ class SavedRouteOut(BaseModel):
     session_id: Optional[str] = None
     places: list[dict]
     graph_geojson: Optional[dict] = None
+    route_geojson: Optional[dict] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

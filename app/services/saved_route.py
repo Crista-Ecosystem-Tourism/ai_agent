@@ -25,6 +25,7 @@ class SavedRouteService:
                     session_id=data.get("session_id"),
                     places=data["places"],
                     graph_geojson=data.get("graph_geojson"),
+                    route_geojson=data.get("route_geojson"),
                     created_at=now,
                     updated_at=now,
                 )
@@ -67,6 +68,7 @@ class SavedRouteService:
                 "session_id": row.session_id,
                 "places": row.places,
                 "graph_geojson": row.graph_geojson,
+                "route_geojson": row.route_geojson,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,
             }

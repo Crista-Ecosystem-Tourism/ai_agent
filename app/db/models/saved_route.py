@@ -19,6 +19,7 @@ class SavedRoute(Base, TimestampMixin):
     session_id: Mapped[Optional[str]] = mapped_column(ForeignKey("chat_session.id"), nullable=True)
     places: Mapped[dict] = mapped_column(JSONB, nullable=False)
     graph_geojson: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, default=None)
+    route_geojson: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, default=None)
 
     user: Mapped["User"] = relationship()  # type: ignore
 
