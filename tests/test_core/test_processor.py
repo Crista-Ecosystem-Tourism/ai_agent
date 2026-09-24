@@ -147,6 +147,24 @@ async def test_verified_route_skips_itinerary_poi_from_another_city(mock_build_r
     mock_build_route.assert_not_called()
 
 
+@pytest.mark.asyncio
+@patch("app.core.services.processor.RouteService.build_route")
+async def test_verified_route_skips_itinerary_with_unlocated_selected_poi(mock_build_route, sample_places):
+    """Нельзя показывать частичную линию, если выбранная точка не имеет координат."""
+    sample_places[2].latitude = None
+    processor = _make_processor()
+
+    geojson, metadata = await processor._build_verified_route(
+        _make_deps(),
+        [{"query": "достопримечательности", "places": sample_places}],
+        _make_itinerary(),
+    )
+
+    assert geojson is None
+    assert metadata is None
+    mock_build_route.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # 3. process_message при недостаточной информации (без маршрута)
 # ---------------------------------------------------------------------------

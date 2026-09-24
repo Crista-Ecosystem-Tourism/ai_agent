@@ -141,7 +141,16 @@ class MessageProcessor:
             logger.warning("Itinerary contains POIs outside of the selected city; route skipped")
             return None, None
 
-        # A missing or unlocated POI is not substituted with a guessed point.
+        # Do not silently drop an itinerary stop: that would make returned geometry
+        # look like the complete itinerary while omitting a selected destination.
+        unlocated_places = [
+            place for place in places
+            if place.latitude is None or place.longitude is None
+        ]
+        if unlocated_places:
+            logger.warning("Itinerary contains POIs without coordinates; route skipped")
+            return None, None
+
         route = await RouteService.build_route(places, deps.http_client)
         if route is None:
             return None, None
