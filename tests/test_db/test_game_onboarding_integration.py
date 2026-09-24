@@ -411,6 +411,11 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(georgia["title"], "Грузия")
         self.assertGreaterEqual(len(georgia["sources"]), 4)
         self.assertEqual((await self.wiki.get_published_version(georgia["version_id"]))["slug"], "country-ge")
+        russia = await self.wiki.get_published("country-ru")
+        self.assertEqual(russia["version_id"], "wiki-country-ru-v1")
+        self.assertEqual(russia["title"], "Россия")
+        self.assertGreaterEqual(len(russia["sources"]), 4)
+        self.assertEqual((await self.wiki.get_published_version(russia["version_id"]))["slug"], "country-ru")
         draft = await self.wiki.create_draft(
             self.user_id,
             slug,
