@@ -55,15 +55,17 @@ class GameProgressService:
     def _today(self) -> date:
         return self._now().astimezone(GAME_TIMEZONE).date()
 
-    async def get_onboarding(self, user_id: str) -> dict[str, Any]:
+    async def get_onboarding(self, user_id: str, language: str = "ru") -> dict[str, Any]:
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
             content = await self._published_content(db)
+            localized_payload, content_language = await self._localized_content(db, content, language)
             stamp = await self._backfill_onboarding_completion(db, user_id)
             daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
-                "content": self._public_content(content.payload),
+                "content": self._public_content(localized_payload),
+                "content_language": content_language,
                 "profile": self._profile_payload(profile),
                 "daily": daily,
                 "completed": stamp is not None,

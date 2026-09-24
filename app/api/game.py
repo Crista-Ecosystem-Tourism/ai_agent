@@ -69,11 +69,12 @@ async def get_passport(
 
 @router.get("/onboarding")
 async def get_onboarding(
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.get_onboarding(user["sub"])
+        return await game.get_onboarding(user["sub"], language)
     except GameContentUnavailableError:
         raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
