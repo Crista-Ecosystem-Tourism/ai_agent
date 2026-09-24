@@ -215,6 +215,19 @@ class CityPilotSeedStaticTests(unittest.TestCase):
             [source["url"] for source in canonical["sources"]],
         )
 
+    def test_moscow_sandbox_story_translation_only_overlays_display_text(self):
+        translated = assigned_literal(
+            "z6e7f8a9b0c_localize_moscow_sandbox_story.py", "payload"
+        )["story"]
+        self.assertEqual(
+            assigned_literal("z6e7f8a9b0c_localize_moscow_sandbox_story.py", "CONTENT_REVISION_ID"),
+            "moscow-sandbox-activities-v8",
+        )
+        self.assertNotIn("source_url", translated)
+        self.assertNotIn("image_url", translated)
+        for key in ("title", "eyebrow", "image_alt", "media_credit", "fact", "source_label", "note"):
+            self.assertTrue(translated[key].strip(), key)
+
 
 if __name__ == "__main__":
     unittest.main()

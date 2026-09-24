@@ -268,7 +268,7 @@ class GameProgressService:
                 "sandbox_unlocked": city_stamp is not None,
             }
 
-    async def get_moscow_sandbox(self, user_id: str) -> dict[str, Any]:
+    async def get_moscow_sandbox(self, user_id: str, language: str = "ru") -> dict[str, Any]:
         """Let a city completer freely review published Moscow lessons and sources."""
         async with self.session_factory() as db:
             profile = await self._ensure_profile(db, user_id)
@@ -278,6 +278,9 @@ class GameProgressService:
             if city_stamp is None:
                 raise GameQuestLockedError("Complete the Moscow city boss before using sandbox")
             drill = await self._published_moscow_sandbox_content(db, city)
+            localized_drill, content_language = (
+                await self._localized_content(db, drill, language) if drill else ({}, "ru")
+            )
             quests = list((await db.scalars(
                 select(GameQuest)
                 .where(GameQuest.city_id == city.id, GameQuest.is_published.is_(True))
@@ -294,11 +297,14 @@ class GameProgressService:
             }
             wiki_reference = self._public_wiki_reference(drill.payload) if drill else None
             lessons = []
+            lesson_languages = []
             for quest in quests:
                 content = contents.get(quest.content_revision_id)
                 if content is None:
                     raise GameContentUnavailableError("Moscow sandbox lesson is not published")
-                public_content = self._public_content(content.payload)
+                localized_lesson, lesson_language = await self._localized_content(db, content, language)
+                lesson_languages.append(lesson_language)
+                public_content = self._public_content(localized_lesson)
                 fact = public_content.get("fact", {})
                 if not isinstance(fact, dict):
                     raise GameContentUnavailableError("Moscow sandbox lesson fact is invalid")
@@ -308,12 +314,16 @@ class GameProgressService:
                     "title": public_content.get("scene", {}).get("title", quest.id),
                     "fact": fact,
                     "question": public_content.get("question", {}),
-                    "explanation": self._content_explanation(content.payload),
+                    "explanation": self._content_explanation(localized_lesson),
                     "wiki_reference": wiki_reference,
                 })
             await db.commit()
             return {
                 "city": {"id": city.id, "name": city.name},
+                "content_language": content_language,
+                "lesson_content_language": "en" if lesson_languages and all(item == "en" for item in lesson_languages) else "ru",
+                "activity_content_language": "ru",
+                "wiki_content_language": "ru" if wiki_reference else None,
                 "profile": self._profile_payload(profile),
                 "city_stamp": self._stamp_payload(city_stamp),
                 "lessons": lessons,
@@ -322,7 +332,7 @@ class GameProgressService:
                 "timeline": self._public_timeline_drill(drill.payload) if drill else None,
                 "word_blocks": self._public_word_blocks_drill(drill.payload) if drill else None,
                 "price_slider": self._public_price_slider_drill(drill.payload) if drill else None,
-                "story": self._public_story_card(drill.payload) if drill else None,
+                "story": self._public_story_card(localized_drill) if drill else None,
                 "photo_scanner": self._public_photo_scanner_drill(drill.payload) if drill else None,
                 "wiki_reference": wiki_reference,
                 "practice_recovery": self._practice_recovery_payload(profile),
@@ -1020,7 +1030,7 @@ class GameProgressService:
         if translation is None:
             return content.payload, "ru"
         localized = dict(content.payload)
-        for section in ("scene", "chris", "fact", "question", "questions", "sources", "reward"):
+        for section in ("scene", "chris", "fact", "question", "questions", "sources", "reward", "story"):
             translated_section = translation.payload.get(section)
             if isinstance(translated_section, dict):
                 localized[section] = {**content.payload.get(section, {}), **translated_section}

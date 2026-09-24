@@ -230,11 +230,12 @@ async def get_moscow_boss(
 
 @router.get("/paths/moscow/sandbox")
 async def get_moscow_sandbox(
+    language: Literal["ru", "en"] = "ru",
     user: dict = Depends(get_current_user),
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     try:
-        return await game.get_moscow_sandbox(user["sub"])
+        return await game.get_moscow_sandbox(user["sub"], language)
     except GameQuestLockedError:
         raise HTTPException(
             status_code=HTTP_409_CONFLICT,
