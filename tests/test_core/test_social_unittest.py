@@ -2,7 +2,13 @@
 
 import unittest
 
-from app.core.social_tokens import canonical_friend_pair, hash_invite_code
+from app.core.social_tokens import (
+    can_add_team_member,
+    can_change_team_role,
+    can_remove_team_member,
+    canonical_friend_pair,
+    hash_invite_code,
+)
 
 
 class SocialTokenTests(unittest.TestCase):
@@ -22,6 +28,25 @@ class SocialTokenTests(unittest.TestCase):
             canonical_friend_pair("alice", "alice")
         with self.assertRaises(ValueError):
             canonical_friend_pair("", "bob")
+
+    def test_only_owner_or_admin_can_add_regular_members(self):
+        self.assertTrue(can_add_team_member("owner", "member"))
+        self.assertTrue(can_add_team_member("admin", "member"))
+        self.assertFalse(can_add_team_member("member", "member"))
+        self.assertFalse(can_add_team_member("admin", "admin"))
+
+    def test_only_owner_can_change_non_owner_roles(self):
+        self.assertTrue(can_change_team_role("owner", "member", "admin"))
+        self.assertFalse(can_change_team_role("admin", "member", "admin"))
+        self.assertFalse(can_change_team_role("owner", "owner", "member"))
+        self.assertFalse(can_change_team_role("owner", "member", "owner"))
+
+    def test_member_removal_preserves_owner_and_admin_boundaries(self):
+        self.assertTrue(can_remove_team_member("member", "member", True))
+        self.assertFalse(can_remove_team_member("owner", "owner", True))
+        self.assertTrue(can_remove_team_member("owner", "admin", False))
+        self.assertFalse(can_remove_team_member("admin", "admin", False))
+        self.assertTrue(can_remove_team_member("admin", "member", False))
 
 
 if __name__ == "__main__":

@@ -38,3 +38,28 @@ class Friendship(Base):
         CheckConstraint("user_a_id < user_b_id", name="friendship_canonical_user_order"),
         Index("idx_friendship_user_b", "user_b_id"),
     )
+
+
+class SocialTeam(Base):
+    __tablename__ = "social_team"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("idx_social_team_creator", "created_by_id", "created_at"),)
+
+
+class SocialTeamMembership(Base):
+    __tablename__ = "social_team_membership"
+
+    team_id: Mapped[str] = mapped_column(ForeignKey("social_team.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("role IN ('owner', 'admin', 'member')", name="social_team_membership_role"),
+        Index("idx_social_team_membership_user", "user_id", "team_id"),
+    )
