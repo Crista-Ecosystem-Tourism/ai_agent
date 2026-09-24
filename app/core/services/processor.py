@@ -1,6 +1,7 @@
 import re
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import List, Union, Optional, Any
 
@@ -145,10 +146,17 @@ class MessageProcessor:
         # look like the complete itinerary while omitting a selected destination.
         unlocated_places = [
             place for place in places
-            if place.latitude is None or place.longitude is None
+            if (
+                place.latitude is None
+                or place.longitude is None
+                or not math.isfinite(place.latitude)
+                or not math.isfinite(place.longitude)
+                or not -90 <= place.latitude <= 90
+                or not -180 <= place.longitude <= 180
+            )
         ]
         if unlocated_places:
-            logger.warning("Itinerary contains POIs without coordinates; route skipped")
+            logger.warning("Itinerary contains POIs without valid coordinates; route skipped")
             return None, None
 
         route = await RouteService.build_route(places, deps.http_client)

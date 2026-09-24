@@ -165,6 +165,31 @@ async def test_verified_route_skips_itinerary_with_unlocated_selected_poi(mock_b
     mock_build_route.assert_not_called()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("latitude", "longitude"),
+    [(float("nan"), 37.6), (55.7, float("inf")), (91.0, 37.6), (55.7, -181.0)],
+)
+@patch("app.core.services.processor.RouteService.build_route")
+async def test_verified_route_skips_selected_poi_with_invalid_coordinates(
+    mock_build_route, sample_places, latitude, longitude
+):
+    """Координаты вне WGS84 или non-finite не передаются в router."""
+    sample_places[2].latitude = latitude
+    sample_places[2].longitude = longitude
+    processor = _make_processor()
+
+    geojson, metadata = await processor._build_verified_route(
+        _make_deps(),
+        [{"query": "достопримечательности", "places": sample_places}],
+        _make_itinerary(),
+    )
+
+    assert geojson is None
+    assert metadata is None
+    mock_build_route.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # 3. process_message при недостаточной информации (без маршрута)
 # ---------------------------------------------------------------------------
