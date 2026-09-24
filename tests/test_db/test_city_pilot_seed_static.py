@@ -11,9 +11,9 @@ MIGRATIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 def assigned_literal(filename, name):
     tree = ast.parse((MIGRATIONS / filename).read_text())
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == name for target in node.targets
-        ):
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
+            return ast.literal_eval(node.value)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
             return ast.literal_eval(node.value)
     raise AssertionError(f"{name} assignment not found in {filename}")
 
@@ -30,6 +30,20 @@ def content_payload(filename, content_id):
         if isinstance(values["id"], ast.Constant) and values["id"].value == content_id:
             return ast.literal_eval(values["payload"])
     raise AssertionError(f"payload for {content_id} not found in {filename}")
+
+
+def dict_literal_with_key(filename, id_value, required_keys):
+    tree = ast.parse((MIGRATIONS / filename).read_text())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        keys = [key.value if isinstance(key, ast.Constant) else None for key in node.keys]
+        if not set(required_keys).issubset(keys) or "id" not in keys:
+            continue
+        values = dict(zip(keys, node.values))
+        if isinstance(values["id"], ast.Constant) and values["id"].value == id_value:
+            return {key: ast.literal_eval(values[key]) for key in required_keys}
+    raise AssertionError(f"row {id_value} not found in {filename}")
 
 
 class CityPilotSeedStaticTests(unittest.TestCase):
@@ -270,6 +284,29 @@ class CityPilotSeedStaticTests(unittest.TestCase):
             self.assertNotIn("tolerance", translated[section], section)
             self.assertNotIn("hotspots", translated[section], section)
             self.assertNotIn("source_url", translated[section], section)
+
+    def test_english_moscow_wiki_is_a_separate_published_edition_with_same_sources(self):
+        migration = "z8f9a0b1c2d3_seed_moscow_wiki_english.py"
+        body = assigned_literal(migration, "ENGLISH_BODY")
+        sources = assigned_literal(migration, "SOURCES")
+        canonical = dict_literal_with_key(
+            "i8d9e0f1a2b3_seed_moscow_wiki_article.py", "wiki-moscow-v1", ("body", "sources", "license")
+        )
+        self.assertEqual(
+            assigned_literal(migration, "revision"), "z8f9a0b1c2d3",
+        )
+        self.assertEqual(
+            assigned_literal(migration, "down_revision"), "z7f8a9b0c1d",
+        )
+        self.assertEqual(assigned_literal(migration, "ARTICLE_ID"), "wiki-moscow-en")
+        self.assertEqual(assigned_literal(migration, "ARTICLE_SLUG"), "moscow-en")
+        self.assertEqual(assigned_literal(migration, "VERSION_ID"), "wiki-moscow-en-v1")
+        self.assertTrue(body["summary"].strip())
+        self.assertEqual(len(body["sections"]), len(canonical["body"]["sections"]))
+        self.assertTrue(all(section["title"].strip() and section["text"].strip() for section in body["sections"]))
+        self.assertEqual([source["url"] for source in sources], [source["url"] for source in canonical["sources"]])
+        self.assertTrue(all(source["label"].strip() for source in sources))
+        self.assertEqual(assigned_literal(migration, "LICENSE"), canonical["license"])
 
 
 if __name__ == "__main__":

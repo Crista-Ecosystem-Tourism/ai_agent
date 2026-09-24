@@ -23,6 +23,7 @@ from app.db.models.game import (
     GameStamp,
 )
 from app.db.models.saved_route import SavedRoute
+from app.db.models.wiki import WikiArticleVersion
 
 
 ONBOARDING_REVISION_ID = "onboarding-moscow-v1"
@@ -296,6 +297,17 @@ class GameProgressService:
                 )).all()
             }
             wiki_reference = self._public_wiki_reference(drill.payload) if drill else None
+            wiki_content_language = "ru" if wiki_reference else None
+            if wiki_reference and language == "en":
+                english_wiki_version = await db.scalar(
+                    select(WikiArticleVersion.id).where(
+                        WikiArticleVersion.id == "wiki-moscow-en-v1",
+                        WikiArticleVersion.status == "published",
+                    )
+                )
+                if english_wiki_version:
+                    wiki_reference = {"slug": "moscow-en", "version_id": english_wiki_version}
+                    wiki_content_language = "en"
             lessons = []
             lesson_languages = []
             for quest in quests:
@@ -331,7 +343,7 @@ class GameProgressService:
                         )
                     ) else "ru"
                 ),
-                "wiki_content_language": "ru" if wiki_reference else None,
+                "wiki_content_language": wiki_content_language,
                 "profile": self._profile_payload(profile),
                 "city_stamp": self._stamp_payload(city_stamp),
                 "lessons": lessons,
