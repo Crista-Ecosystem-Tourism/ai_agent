@@ -9,8 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.media_policy import (
-    MAX_ASSETS_PER_USER,
-    MAX_USER_STORAGE_BYTES,
+    media_quota_allows,
     sanitize_image,
 )
 from app.core.media_storage import MediaStorage, MediaStorageUnavailable
@@ -57,7 +56,7 @@ class MediaService:
                 select(func.count(GameMediaAsset.id), func.coalesce(func.sum(GameMediaAsset.byte_size), 0))
                 .where(GameMediaAsset.owner_id == owner_id)
             )).one()
-            if count >= MAX_ASSETS_PER_USER or used + len(sanitized.original) > MAX_USER_STORAGE_BYTES:
+            if not media_quota_allows(count, used, len(sanitized.original)):
                 raise MediaLimitError
             try:
                 await asyncio.to_thread(self.storage.put_pair, key, sanitized.original, sanitized.preview)

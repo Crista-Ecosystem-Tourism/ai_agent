@@ -20,6 +20,12 @@ class MediaValidationError(ValueError):
     pass
 
 
+def media_quota_allows(asset_count: int, stored_bytes: int, incoming_bytes: int) -> bool:
+    if min(asset_count, stored_bytes, incoming_bytes) < 0:
+        raise ValueError("Media quota values cannot be negative")
+    return asset_count < MAX_ASSETS_PER_USER and stored_bytes + incoming_bytes <= MAX_USER_STORAGE_BYTES
+
+
 @dataclass(frozen=True)
 class SanitizedImage:
     original: bytes

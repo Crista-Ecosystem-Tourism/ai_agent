@@ -3,7 +3,13 @@ import unittest
 
 from PIL import Image
 
-from app.core.media_policy import MediaValidationError, sanitize_image
+from app.core.media_policy import (
+    MAX_ASSETS_PER_USER,
+    MAX_USER_STORAGE_BYTES,
+    MediaValidationError,
+    media_quota_allows,
+    sanitize_image,
+)
 
 
 def image_bytes(fmt="PNG", size=(32, 18), exif=None):
@@ -40,6 +46,13 @@ class MediaPolicyTests(unittest.TestCase):
     def test_rejects_excessive_pixel_dimensions(self):
         with self.assertRaises(MediaValidationError):
             sanitize_image(image_bytes("PNG", (7000, 6000)))
+
+    def test_per_account_quota_accepts_exact_storage_edge_and_rejects_overflow(self):
+        self.assertTrue(media_quota_allows(MAX_ASSETS_PER_USER - 1, MAX_USER_STORAGE_BYTES - 100, 100))
+        self.assertFalse(media_quota_allows(MAX_ASSETS_PER_USER, 0, 1))
+        self.assertFalse(media_quota_allows(0, MAX_USER_STORAGE_BYTES, 1))
+        with self.assertRaises(ValueError):
+            media_quota_allows(0, -1, 1)
 
 
 if __name__ == "__main__":
