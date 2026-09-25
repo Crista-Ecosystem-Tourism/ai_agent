@@ -97,6 +97,25 @@ class WeeklyLeagueIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 )
             ))
 
+        next_week = await self.social.get_weekly_league(self.user_ids[0])
+        self.assertFalse(next_week["joined"])
+        self.assertEqual({
+            "season_id": season_id,
+            "weekly_xp": 600,
+            "place": 1,
+            "rank_before": 1,
+            "rank_after": 2,
+            "movement": "promoted",
+            "closed_at": self.now.isoformat(),
+        }, next_week["previous_result"])
+        friend_history = await self.social.get_weekly_league(self.user_ids[1])
+        self.assertEqual(500, friend_history["previous_result"]["weekly_xp"])
+        self.assertNotEqual(next_week["previous_result"], friend_history["previous_result"])
+        joined_next_week = await self.social.join_weekly_league(self.user_ids[0])
+        self.assertTrue(joined_next_week["joined"])
+        self.assertEqual(2, joined_next_week["rank"])
+        self.assertEqual(next_week["previous_result"], joined_next_week["previous_result"])
+
 
 if __name__ == "__main__":
     unittest.main()

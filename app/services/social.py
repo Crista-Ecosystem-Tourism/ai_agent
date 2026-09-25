@@ -540,6 +540,34 @@ class SocialService:
         async with self.session_factory() as db:
             await self._close_expired_leagues(db, now)
             await self._ensure_league_season(db, week)
+            previous_row = (await db.execute(
+                select(
+                    LeagueSeason.id,
+                    LeagueSeason.closed_at,
+                    LeagueMembership.weekly_xp,
+                    LeagueMembership.final_place,
+                    LeagueMembership.rank,
+                    LeagueMembership.final_rank,
+                    LeagueMembership.movement,
+                )
+                .join(LeagueMembership, LeagueMembership.season_id == LeagueSeason.id)
+                .where(
+                    LeagueMembership.user_id == user_id,
+                    LeagueSeason.status == "closed",
+                    LeagueMembership.final_rank.is_not(None),
+                )
+                .order_by(LeagueSeason.ends_at.desc())
+                .limit(1)
+            )).one_or_none()
+            previous_result = None if previous_row is None else {
+                "season_id": previous_row.id,
+                "weekly_xp": previous_row.weekly_xp,
+                "place": previous_row.final_place,
+                "rank_before": previous_row.rank,
+                "rank_after": previous_row.final_rank,
+                "movement": previous_row.movement,
+                "closed_at": previous_row.closed_at.isoformat(),
+            }
             membership = await db.get(LeagueMembership, (week.season_id, user_id))
             if membership is None:
                 await db.commit()
@@ -548,6 +576,7 @@ class SocialService:
                     "season_id": week.season_id,
                     "starts_at": week.starts_at.isoformat(),
                     "ends_at": week.ends_at.isoformat(),
+                    "previous_result": previous_result,
                     "members": [],
                 }
 
@@ -598,6 +627,7 @@ class SocialService:
                 "ends_at": week.ends_at.isoformat(),
                 "rank": membership.rank,
                 "participant_count": len(memberships),
+                "previous_result": previous_result,
                 "members": members,
             }
 
