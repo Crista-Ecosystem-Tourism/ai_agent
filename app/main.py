@@ -15,6 +15,7 @@ from app.api.wiki import router as wiki_router
 from app.api.vision import router as vision_router
 from app.api.social import router as social_router
 from app.api.tips import router as tips_router
+from app.api.media import router as media_router
 
 
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -64,6 +65,7 @@ app.include_router(wiki_router)
 app.include_router(vision_router)
 app.include_router(social_router)
 app.include_router(tips_router)
+app.include_router(media_router)
 
 @app.get("/health")
 def health():

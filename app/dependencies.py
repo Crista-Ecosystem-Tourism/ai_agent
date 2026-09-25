@@ -15,6 +15,7 @@ from app.services.game_progress import GameProgressService
 from app.services.wiki import WikiService
 from app.services.social import SocialService
 from app.services.tips import TipService
+from app.services.media import LocalPrivateMediaStorage, MediaService
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -36,6 +37,7 @@ _game_progress_service: GameProgressService | None = None
 _wiki_service: WikiService | None = None
 _social_service: SocialService | None = None
 _tip_service: TipService | None = None
+_media_service: MediaService | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -73,6 +75,7 @@ def get_runtime_status() -> dict[str, object]:
         _wiki_service is not None,
         _social_service is not None,
         _tip_service is not None,
+        _media_service is not None,
     ))
     return {
         "core_ready": core_ready,
@@ -87,6 +90,7 @@ async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
     global _history_service, _chat_session_service, _user_service, _saved_route_service, _game_progress_service, _wiki_service, _social_service
     global _tip_service
+    global _media_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
     global _ai_available, _ai_unavailable_reason
 
@@ -110,6 +114,10 @@ async def lifespan(app: FastAPI):
     _wiki_service = WikiService(_session_factory)
     _social_service = SocialService(_session_factory, _game_progress_service)
     _tip_service = TipService(_session_factory)
+    _media_service = MediaService(
+        _session_factory,
+        LocalPrivateMediaStorage(os.getenv("MEDIA_STORAGE_DIR")),
+    )
 
     api_key = _configured_openrouter_key()
     if api_key is None:
@@ -154,6 +162,7 @@ async def lifespan(app: FastAPI):
         _wiki_service = None
         _social_service = None
         _tip_service = None
+        _media_service = None
         _llm_model = None
         _preferences_agent = None
         _search_agent = None
@@ -199,6 +208,10 @@ def get_social_service() -> SocialService:
 
 def get_tip_service() -> TipService:
     return _tip_service
+
+
+def get_media_service() -> MediaService:
+    return _media_service
 
 def get_message_processor() -> MessageProcessor:
     if _message_processor is None:
