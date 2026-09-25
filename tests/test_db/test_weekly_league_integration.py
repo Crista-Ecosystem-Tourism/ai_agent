@@ -79,7 +79,7 @@ class WeeklyLeagueIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         season_id = view["season_id"]
         self.now += timedelta(days=7)
-        await self.social.get_weekly_league(self.user_ids[0])
+        self.assertEqual(1, await self.social.settle_expired_leagues())
         async with self.sessions() as db:
             season = await db.get(LeagueSeason, season_id)
             top = await db.get(LeagueMembership, (season_id, self.user_ids[0]))
@@ -87,7 +87,7 @@ class WeeklyLeagueIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(2, top.final_rank)
             first_closed_at = season.closed_at
 
-        await self.social.get_weekly_league(self.user_ids[0])
+        self.assertEqual(0, await self.social.settle_expired_leagues())
         async with self.sessions() as db:
             season = await db.get(LeagueSeason, season_id)
             self.assertEqual(first_closed_at, season.closed_at)

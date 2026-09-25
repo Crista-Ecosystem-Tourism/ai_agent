@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -14,6 +15,7 @@ from app.services.saved_route import SavedRouteService
 from app.services.game_progress import GameProgressService
 from app.services.wiki import WikiService
 from app.services.social import SocialService
+from app.services.league_scheduler import league_settlement_loop
 from app.services.tips import TipService
 from app.services.media import MediaService
 from app.core.media_storage import create_media_storage
@@ -148,9 +150,15 @@ async def lifespan(app: FastAPI):
             _ai_available = False
             _ai_unavailable_reason = "AI provider initialization failed"
 
+    league_settlement_task = asyncio.create_task(league_settlement_loop(_social_service))
     try:
         yield
     finally:
+        league_settlement_task.cancel()
+        try:
+            await league_settlement_task
+        except asyncio.CancelledError:
+            pass
         if _http_client:
             await _http_client.aclose()
         if _engine:

@@ -634,6 +634,13 @@ class SocialService:
             await db.commit()
         return await self.get_weekly_league(user_id)
 
+    async def settle_expired_leagues(self) -> int:
+        """Close expired league seasons; safe for periodic and concurrent callers."""
+        async with self.session_factory() as db:
+            closed_count = await self._close_expired_leagues(db, self._clock())
+            await db.commit()
+            return closed_count
+
     @staticmethod
     async def _ensure_league_season(db: AsyncSession, week: LeagueWeek) -> None:
         await db.execute(
@@ -663,13 +670,14 @@ class SocialService:
         )
         return {user_id: int(total or 0) for user_id, total in rows.all()}
 
-    async def _close_expired_leagues(self, db: AsyncSession, now: datetime) -> None:
+    async def _close_expired_leagues(self, db: AsyncSession, now: datetime) -> int:
         seasons = list((await db.scalars(
             select(LeagueSeason)
             .where(LeagueSeason.status == "open", LeagueSeason.ends_at <= now)
             .order_by(LeagueSeason.ends_at)
             .with_for_update()
         )).all())
+        closed_count = 0
         for season in seasons:
             memberships = list((await db.scalars(
                 select(LeagueMembership)
@@ -691,6 +699,8 @@ class SocialService:
                 row.movement = outcome.movement
             season.status = "closed"
             season.closed_at = now
+            closed_count += 1
+        return closed_count
 
     @staticmethod
     async def _shared_quest_payload(
