@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
     _saved_route_service = SavedRouteService(_session_factory)
     _game_progress_service = GameProgressService(_session_factory)
     _wiki_service = WikiService(_session_factory)
-    _social_service = SocialService(_session_factory)
+    _social_service = SocialService(_session_factory, _game_progress_service)
 
     api_key = _configured_openrouter_key()
     if api_key is None:

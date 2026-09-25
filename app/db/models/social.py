@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import Base
@@ -63,3 +63,35 @@ class SocialTeamMembership(Base):
         CheckConstraint("role IN ('owner', 'admin', 'member')", name="social_team_membership_role"),
         Index("idx_social_team_membership_user", "user_id", "team_id"),
     )
+
+
+class SocialTeamQuest(Base):
+    __tablename__ = "social_team_quest"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    team_id: Mapped[str] = mapped_column(ForeignKey("social_team.id", ondelete="CASCADE"), nullable=False)
+    quest_id: Mapped[str] = mapped_column(ForeignKey("game_quest.id", ondelete="RESTRICT"), nullable=False)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
+    reward_xp: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("reward_xp >= 1", name="social_team_quest_positive_xp"),
+        CheckConstraint("status IN ('active', 'complete')", name="social_team_quest_status"),
+        UniqueConstraint("team_id", "quest_id", name="uq_social_team_quest_once"),
+        Index("idx_social_team_quest_status", "team_id", "status"),
+    )
+
+
+class SocialTeamQuestParticipant(Base):
+    __tablename__ = "social_team_quest_participant"
+
+    team_quest_id: Mapped[str] = mapped_column(
+        ForeignKey("social_team_quest.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), primary_key=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("idx_social_team_quest_participant_user", "user_id", "team_quest_id"),)

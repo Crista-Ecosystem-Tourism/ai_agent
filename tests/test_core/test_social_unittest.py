@@ -8,6 +8,7 @@ from app.core.social_tokens import (
     can_remove_team_member,
     canonical_friend_pair,
     hash_invite_code,
+    shared_quest_reward_key,
 )
 
 
@@ -47,6 +48,13 @@ class SocialTokenTests(unittest.TestCase):
         self.assertTrue(can_remove_team_member("owner", "admin", False))
         self.assertFalse(can_remove_team_member("admin", "admin", False))
         self.assertTrue(can_remove_team_member("admin", "member", False))
+
+    def test_shared_reward_key_is_stable_and_namespaced(self):
+        key = shared_quest_reward_key("moscow-red-square")
+        self.assertEqual(key, shared_quest_reward_key("moscow-red-square"))
+        self.assertEqual("team-quest:moscow-red-square", key)
+        with self.assertRaises(ValueError):
+            shared_quest_reward_key("")
 
 
 if __name__ == "__main__":

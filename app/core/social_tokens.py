@@ -35,3 +35,10 @@ def can_remove_team_member(actor_role: str, target_role: str, is_self: bool) -> 
     if is_self:
         return actor_role in TEAM_ROLES
     return actor_role == "owner" or (actor_role == "admin" and target_role == "member")
+
+
+def shared_quest_reward_key(quest_id: str) -> str:
+    """Return a stable user-scoped key so a quest bonus is earned only once globally."""
+    if not quest_id:
+        raise ValueError("A shared reward needs a stable quest ID")
+    return f"team-quest:{quest_id}"

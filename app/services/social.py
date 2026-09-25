@@ -19,7 +19,22 @@ from app.core.social_tokens import (
     hash_invite_code,
 )
 from app.db.models.auth import User
-from app.db.models.social import FriendInvite, Friendship, SocialTeam, SocialTeamMembership
+from app.db.models.game import (
+    GameCity,
+    GameContentRevision,
+    GameContentTranslation,
+    GameQuest,
+    GameQuestCompletion,
+)
+from app.db.models.social import (
+    FriendInvite,
+    Friendship,
+    SocialTeam,
+    SocialTeamMembership,
+    SocialTeamQuest,
+    SocialTeamQuestParticipant,
+)
+from app.services.game_progress import GameProgressService
 
 
 class SocialInviteNotFoundError(RuntimeError):
@@ -42,6 +57,18 @@ class SocialTeamLimitError(RuntimeError):
     """The account or team reached a configured size limit."""
 
 
+class SocialSharedQuestUnavailableError(RuntimeError):
+    """The source game quest is not published or cannot provide a safe reward."""
+
+
+class SocialSharedQuestExistsError(RuntimeError):
+    """A team can run a particular published quest only once."""
+
+
+class SocialSharedQuestTeamTooSmallError(RuntimeError):
+    """A shared quest needs at least two active team participants."""
+
+
 class SocialService:
     INVITE_TTL = timedelta(days=7)
     MAX_ACTIVE_INVITES = 10
@@ -51,10 +78,12 @@ class SocialService:
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
+        game_progress: GameProgressService,
         token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ):
         self.session_factory = session_factory
+        self.game_progress = game_progress
         self._token_factory = token_factory
         self._clock = clock
 
@@ -319,9 +348,239 @@ class SocialService:
                 raise SocialTeamNotFoundError
             if not can_remove_team_member(actor_role or "", target.role, actor_id == member_id):
                 raise SocialTeamPermissionError
+            active_team_quests = select(SocialTeamQuest.id).where(
+                SocialTeamQuest.team_id == team_id,
+                SocialTeamQuest.status == "active",
+            )
+            await db.execute(delete(SocialTeamQuestParticipant).where(
+                SocialTeamQuestParticipant.team_quest_id.in_(active_team_quests),
+                SocialTeamQuestParticipant.user_id == member_id,
+            ))
             await db.delete(target)
             await db.commit()
             return True
+
+    async def create_shared_quest(self, actor_id: str, team_id: str, quest_id: str) -> dict:
+        now = self._clock()
+        async with self.session_factory() as db:
+            await self._lock_team(db, team_id)
+            actor_role = await self._team_role(db, team_id, actor_id)
+            if actor_role not in {"owner", "admin"}:
+                raise SocialTeamPermissionError
+            quest_and_content = await db.execute(
+                select(GameQuest, GameContentRevision)
+                .join(GameContentRevision, GameContentRevision.id == GameQuest.content_revision_id)
+                .where(
+                    GameQuest.id == quest_id,
+                    GameQuest.is_published.is_(True),
+                    GameContentRevision.is_published.is_(True),
+                )
+            )
+            source = quest_and_content.one_or_none()
+            if source is None:
+                raise SocialSharedQuestUnavailableError
+            quest, content = source
+            reward = content.payload.get("reward", {})
+            reward_xp = reward.get("xp") if isinstance(reward, dict) else None
+            if isinstance(reward_xp, bool) or not isinstance(reward_xp, int) or reward_xp < 1 or reward_xp > 1000:
+                raise SocialSharedQuestUnavailableError
+            existing = await db.scalar(select(SocialTeamQuest.id).where(
+                SocialTeamQuest.team_id == team_id,
+                SocialTeamQuest.quest_id == quest.id,
+            ))
+            if existing is not None:
+                raise SocialSharedQuestExistsError
+            participants = list((await db.scalars(
+                select(SocialTeamMembership.user_id).where(SocialTeamMembership.team_id == team_id)
+            )).all())
+            if len(participants) < 2:
+                raise SocialSharedQuestTeamTooSmallError
+            shared_quest = SocialTeamQuest(
+                id=uuid.uuid4().hex,
+                team_id=team_id,
+                quest_id=quest.id,
+                created_by_id=actor_id,
+                reward_xp=reward_xp,
+                status="active",
+                created_at=now,
+            )
+            db.add(shared_quest)
+            for participant_id in participants:
+                db.add(SocialTeamQuestParticipant(
+                    team_quest_id=shared_quest.id,
+                    user_id=participant_id,
+                    joined_at=now,
+                ))
+            await db.commit()
+            return await self._shared_quest_payload(db, shared_quest)
+
+    async def list_shared_quest_catalog(self, language: str = "ru") -> list[dict]:
+        language = "en" if language == "en" else "ru"
+        async with self.session_factory() as db:
+            rows = (await db.execute(
+                select(
+                    GameQuest.id.label("quest_id"),
+                    GameCity.id.label("city_id"),
+                    GameCity.name.label("city_name"),
+                    GameContentRevision.payload,
+                    GameContentTranslation.payload.label("translated_payload"),
+                )
+                .join(GameCity, GameCity.id == GameQuest.city_id)
+                .join(GameContentRevision, GameContentRevision.id == GameQuest.content_revision_id)
+                .outerjoin(
+                    GameContentTranslation,
+                    and_(
+                        GameContentTranslation.content_revision_id == GameContentRevision.id,
+                        GameContentTranslation.language == language,
+                        GameContentTranslation.is_published.is_(True),
+                    ),
+                )
+                .where(
+                    GameCity.is_published.is_(True),
+                    GameQuest.is_published.is_(True),
+                    GameContentRevision.is_published.is_(True),
+                )
+                .order_by(GameCity.name, GameQuest.position)
+            )).all()
+            return [
+                {
+                    "id": row.quest_id,
+                    "city_id": row.city_id,
+                    "city_name": row.city_name,
+                    "title": self._team_quest_title(row.translated_payload, row.payload, row.quest_id),
+                }
+                for row in rows
+            ]
+
+    @staticmethod
+    def _team_quest_title(translated: dict | None, canonical: dict, fallback: str) -> str:
+        for payload in (translated, canonical):
+            if isinstance(payload, dict):
+                scene = payload.get("scene")
+                title = scene.get("title") if isinstance(scene, dict) else None
+                if isinstance(title, str) and title.strip():
+                    return title
+        return fallback
+
+    async def list_shared_quests(self, user_id: str, team_id: str, language: str = "ru") -> list[dict]:
+        async with self.session_factory() as db:
+            if await self._team_role(db, team_id, user_id) is None:
+                raise SocialTeamNotFoundError
+            quests = list((await db.scalars(
+                select(SocialTeamQuest)
+                .where(SocialTeamQuest.team_id == team_id)
+                .order_by(SocialTeamQuest.created_at.desc())
+            )).all())
+            return [await self._shared_quest_payload(db, quest, language) for quest in quests]
+
+    async def claim_shared_quest(
+        self, user_id: str, team_id: str, shared_quest_id: str, language: str = "ru",
+    ) -> dict:
+        async with self.session_factory() as db:
+            await self._lock_team(db, team_id)
+            shared_quest = await db.scalar(
+                select(SocialTeamQuest)
+                .where(SocialTeamQuest.id == shared_quest_id, SocialTeamQuest.team_id == team_id)
+                .with_for_update()
+            )
+            if shared_quest is None or await self._team_role(db, team_id, user_id) is None:
+                raise SocialTeamNotFoundError
+            is_participant = await db.get(SocialTeamQuestParticipant, (shared_quest_id, user_id))
+            if is_participant is None:
+                raise SocialTeamPermissionError
+            if shared_quest.status == "complete":
+                payload = await self._shared_quest_payload(db, shared_quest, language)
+                payload["xp_awarded"] = 0
+                payload["rewards_credited"] = 0
+                await db.commit()
+                return payload
+
+            payload = await self._shared_quest_payload(db, shared_quest, language)
+            if not payload["ready_to_claim"]:
+                payload["xp_awarded"] = 0
+                payload["rewards_credited"] = 0
+                await db.commit()
+                return payload
+
+            now = self._clock()
+            shared_quest.status = "complete"
+            shared_quest.completed_at = now
+            participants = list((await db.scalars(
+                select(SocialTeamQuestParticipant.user_id).where(
+                    SocialTeamQuestParticipant.team_quest_id == shared_quest_id
+                )
+            )).all())
+            caller_reward = 0
+            rewards_credited = 0
+            for participant_id in participants:
+                awarded = await self.game_progress.award_shared_quest_bonus(
+                    db,
+                    participant_id,
+                    shared_quest.quest_id,
+                    shared_quest.reward_xp,
+                    now,
+                )
+                if participant_id == user_id:
+                    caller_reward = awarded
+                if awarded:
+                    rewards_credited += 1
+            await db.commit()
+            payload = await self._shared_quest_payload(db, shared_quest, language)
+            payload["xp_awarded"] = caller_reward
+            payload["rewards_credited"] = rewards_credited
+            return payload
+
+    @staticmethod
+    async def _shared_quest_payload(
+        db: AsyncSession, shared_quest: SocialTeamQuest, language: str = "ru",
+    ) -> dict:
+        participant_rows = (await db.execute(
+            select(SocialTeamQuestParticipant.user_id, User.name)
+            .join(User, User.id == SocialTeamQuestParticipant.user_id)
+            .where(SocialTeamQuestParticipant.team_quest_id == shared_quest.id)
+            .order_by(User.name)
+        )).all()
+        participant_ids = [row.user_id for row in participant_rows]
+        completed_ids = set()
+        if participant_ids:
+            completed_ids = set((await db.scalars(
+                select(GameQuestCompletion.user_id).where(
+                    GameQuestCompletion.quest_id == shared_quest.quest_id,
+                    GameQuestCompletion.user_id.in_(participant_ids),
+                )
+            )).all())
+        participant_count = len(participant_rows)
+        completed_count = len(completed_ids)
+        payload_rows = await db.execute(
+            select(GameContentRevision.payload, GameContentTranslation.payload)
+            .join(GameQuest, GameQuest.content_revision_id == GameContentRevision.id)
+            .outerjoin(
+                GameContentTranslation,
+                and_(
+                    GameContentTranslation.content_revision_id == GameContentRevision.id,
+                    GameContentTranslation.language == ("en" if language == "en" else "ru"),
+                    GameContentTranslation.is_published.is_(True),
+                ),
+            )
+            .where(GameQuest.id == shared_quest.quest_id)
+        )
+        canonical, translated = payload_rows.one()
+        quest_title = SocialService._team_quest_title(translated, canonical, shared_quest.quest_id)
+        return {
+            "id": shared_quest.id,
+            "quest_id": shared_quest.quest_id,
+            "quest_title": quest_title,
+            "status": shared_quest.status,
+            "participant_count": participant_count,
+            "completed_count": completed_count,
+            "ready_to_claim": participant_count > 0 and completed_count == participant_count,
+            "created_at": shared_quest.created_at.isoformat(),
+            "completed_at": shared_quest.completed_at.isoformat() if shared_quest.completed_at else None,
+            "participants": [
+                {"id": row.user_id, "name": row.name, "completed": row.user_id in completed_ids}
+                for row in participant_rows
+            ],
+        }
 
     @staticmethod
     async def _lock_team(db: AsyncSession, team_id: str) -> SocialTeam:

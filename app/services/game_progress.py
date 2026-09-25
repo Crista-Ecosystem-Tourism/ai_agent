@@ -24,6 +24,7 @@ from app.db.models.game import (
 )
 from app.db.models.saved_route import SavedRoute
 from app.db.models.wiki import WikiArticleVersion
+from app.core.social_tokens import shared_quest_reward_key
 
 
 ONBOARDING_REVISION_ID = "onboarding-moscow-v1"
@@ -968,6 +969,38 @@ class GameProgressService:
             .returning(GameRewardLedger.id)
         )
         return xp if result.scalar_one_or_none() else 0
+
+    async def award_shared_quest_bonus(
+        self,
+        db: AsyncSession,
+        user_id: str,
+        quest_id: str,
+        xp: int,
+        awarded_at: datetime,
+    ) -> int:
+        """Credit one stable team-quest bonus through the existing reward ledger.
+
+        The team-quest caller must keep this in the same transaction as completion.
+        Replays return zero because GameRewardLedger uniquely keys user + reward_key.
+        """
+        if xp <= 0:
+            return 0
+        await self._ensure_profile(db, user_id)
+        credited = await self._record_reward(
+            db,
+            user_id,
+            quest_id,
+            shared_quest_reward_key(quest_id),
+            xp,
+            awarded_at,
+        )
+        if credited:
+            await db.execute(
+                update(GameProfile)
+                .where(GameProfile.user_id == user_id)
+                .values(xp=GameProfile.xp + credited, updated_at=awarded_at)
+            )
+        return credited
 
     @staticmethod
     async def _record_daily_completion(

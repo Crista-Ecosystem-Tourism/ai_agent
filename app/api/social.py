@@ -1,5 +1,7 @@
 """Authenticated friend invitations and accepted friendship management."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
@@ -11,6 +13,9 @@ from app.services.social import (
     SocialTeamLimitError,
     SocialTeamNotFoundError,
     SocialTeamPermissionError,
+    SocialSharedQuestExistsError,
+    SocialSharedQuestTeamTooSmallError,
+    SocialSharedQuestUnavailableError,
     SocialService,
 )
 
@@ -32,6 +37,10 @@ class AddTeamMemberIn(BaseModel):
 
 class UpdateTeamRoleIn(BaseModel):
     role: str = Field(pattern="^(admin|member)$")
+
+
+class CreateSharedQuestIn(BaseModel):
+    quest_id: str = Field(min_length=1, max_length=160)
 
 
 @router.post("/invites", status_code=status.HTTP_201_CREATED)
@@ -165,3 +174,62 @@ async def remove_team_member(
     except SocialTeamNotFoundError:
         raise HTTPException(status_code=404, detail="Участник команды недоступен")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/team-quest-catalog")
+async def list_shared_quest_catalog(
+    language: Literal["ru", "en"] = "ru",
+    _user: dict = Depends(get_current_user),
+    social: SocialService = Depends(get_social_service),
+):
+    return await social.list_shared_quest_catalog(language)
+
+
+@router.get("/teams/{team_id}/quests")
+async def list_shared_quests(
+    team_id: str,
+    language: Literal["ru", "en"] = "ru",
+    user: dict = Depends(get_current_user),
+    social: SocialService = Depends(get_social_service),
+):
+    try:
+        return await social.list_shared_quests(user["sub"], team_id, language)
+    except SocialTeamNotFoundError:
+        raise HTTPException(status_code=404, detail="Команда недоступна")
+
+
+@router.post("/teams/{team_id}/quests", status_code=status.HTTP_201_CREATED)
+async def create_shared_quest(
+    team_id: str,
+    payload: CreateSharedQuestIn,
+    user: dict = Depends(get_current_user),
+    social: SocialService = Depends(get_social_service),
+):
+    try:
+        return await social.create_shared_quest(user["sub"], team_id, payload.quest_id)
+    except SocialTeamPermissionError:
+        raise HTTPException(status_code=403, detail="Только владелец или админ может запустить квест")
+    except SocialSharedQuestTeamTooSmallError:
+        raise HTTPException(status_code=409, detail="Для совместного квеста нужны минимум два участника")
+    except SocialSharedQuestExistsError:
+        raise HTTPException(status_code=409, detail="Эта команда уже запускала данный квест")
+    except SocialSharedQuestUnavailableError:
+        raise HTTPException(status_code=404, detail="Опубликованный квест недоступен")
+    except SocialTeamNotFoundError:
+        raise HTTPException(status_code=404, detail="Команда недоступна")
+
+
+@router.post("/teams/{team_id}/quests/{shared_quest_id}/claim")
+async def claim_shared_quest(
+    team_id: str,
+    shared_quest_id: str,
+    language: Literal["ru", "en"] = "ru",
+    user: dict = Depends(get_current_user),
+    social: SocialService = Depends(get_social_service),
+):
+    try:
+        return await social.claim_shared_quest(user["sub"], team_id, shared_quest_id, language)
+    except SocialTeamPermissionError:
+        raise HTTPException(status_code=403, detail="Награду может получить только участник совместного квеста")
+    except SocialTeamNotFoundError:
+        raise HTTPException(status_code=404, detail="Совместный квест недоступен")
