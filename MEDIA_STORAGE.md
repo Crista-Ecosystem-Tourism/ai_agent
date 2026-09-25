@@ -1,6 +1,6 @@
 # Private media storage
 
-Media uploads are disabled unless an adapter is explicitly configured. The current API accepts JPEG, PNG, and WebP images up to 10 MiB, re-encodes them as JPEG, removes source metadata, and stores a separate preview. Both variants are private; they are served through authenticated owner-scoped endpoints, never direct public object URLs.
+Media uploads are disabled unless an adapter is explicitly configured. The API accepts JPEG, PNG, and WebP images up to 10 MiB plus MP4/H.264 and WebM/VP8, VP9, or AV1 videos up to 50 MiB and 60 seconds. Images are re-encoded as JPEG; videos are remuxed without source metadata or chapters. Both get a separate poster/preview and remain private behind authenticated owner-scoped endpoints, never direct public object URLs. The API runtime image installs FFmpeg/FFprobe for video validation and poster generation.
 
 ## S3-compatible object storage
 

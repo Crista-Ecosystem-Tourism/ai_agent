@@ -8,10 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.media_policy import (
-    media_quota_allows,
-    sanitize_image,
-)
+from app.core.media_policy import media_quota_allows, sanitize_media
 from app.core.media_storage import MediaStorage, MediaStorageUnavailable
 from app.db.models.auth import User
 from app.db.models.game import GameQuest
@@ -40,7 +37,7 @@ class MediaService:
             return [self._payload(asset) for asset in assets]
 
     async def upload(self, owner_id: str, quest_id: str, raw: bytes) -> dict:
-        sanitized = await asyncio.to_thread(sanitize_image, raw)
+        sanitized = await asyncio.to_thread(sanitize_media, raw)
         await asyncio.to_thread(self.storage.ensure_available)
         asset_id = uuid.uuid4().hex
         key = uuid.uuid4().hex
@@ -59,13 +56,16 @@ class MediaService:
             if not media_quota_allows(count, used, len(sanitized.original)):
                 raise MediaLimitError
             try:
-                await asyncio.to_thread(self.storage.put_pair, key, sanitized.original, sanitized.preview)
+                await asyncio.to_thread(
+                    self.storage.put_pair, key, sanitized.original, sanitized.preview, sanitized.content_type,
+                )
             except Exception as error:
                 raise MediaStorageUnavailable("Хранилище файлов временно недоступно") from error
             asset = GameMediaAsset(
                 id=asset_id, owner_id=owner_id, quest_id=quest_id, storage_key=key,
-                preview_key=key, content_type="image/jpeg", byte_size=len(sanitized.original),
+                preview_key=key, content_type=sanitized.content_type, byte_size=len(sanitized.original),
                 width=sanitized.width, height=sanitized.height,
+                duration_seconds=sanitized.duration_seconds,
                 sha256=hashlib.sha256(sanitized.original).hexdigest(), created_at=now,
             )
             db.add(asset)
@@ -74,13 +74,17 @@ class MediaService:
             except Exception:
                 await db.rollback()
                 try:
-                    await asyncio.to_thread(self.storage.delete_pair, key)
+                    await asyncio.to_thread(self.storage.delete_pair, key, sanitized.content_type)
                 except Exception:
                     pass
                 raise
             return self._payload(asset)
 
     async def read_mine(self, owner_id: str, asset_id: str, preview: bool = False) -> bytes:
+        data, _content_type = await self.read_mine_with_type(owner_id, asset_id, preview)
+        return data
+
+    async def read_mine_with_type(self, owner_id: str, asset_id: str, preview: bool = False) -> tuple[bytes, str]:
         async with self.session_factory() as db:
             asset = await db.scalar(select(GameMediaAsset).where(
                 GameMediaAsset.id == asset_id, GameMediaAsset.owner_id == owner_id,
@@ -88,8 +92,12 @@ class MediaService:
             if asset is None:
                 raise MediaNotFoundError
             key = asset.preview_key if preview else asset.storage_key
+            content_type = "image/jpeg" if preview else asset.content_type
         try:
-            return await asyncio.to_thread(self.storage.read, f"{key}-preview" if preview else key)
+            data = await asyncio.to_thread(
+                self.storage.read, f"{key}-preview" if preview else key, content_type,
+            )
+            return data, content_type
         except Exception as error:
             raise MediaStorageUnavailable("Файл временно недоступен") from error
 
@@ -102,7 +110,7 @@ class MediaService:
                 raise MediaNotFoundError
             key = asset.storage_key
             try:
-                await asyncio.to_thread(self.storage.delete_pair, key)
+                await asyncio.to_thread(self.storage.delete_pair, key, asset.content_type)
             except Exception as error:
                 raise MediaStorageUnavailable("Не удалось безопасно удалить файл из хранилища") from error
             await db.delete(asset)
@@ -113,6 +121,7 @@ class MediaService:
         return {
             "id": asset.id, "quest_id": asset.quest_id, "content_type": asset.content_type,
             "byte_size": asset.byte_size, "width": asset.width, "height": asset.height,
+            "duration_seconds": asset.duration_seconds,
             "created_at": asset.created_at.isoformat(), "exif": "stripped",
             "visibility": "private", "preview_url": f"/media/{asset.id}/preview",
             "file_url": f"/media/{asset.id}/file",

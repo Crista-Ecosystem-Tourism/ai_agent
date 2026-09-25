@@ -9,7 +9,7 @@ from app.services.media import (
     MediaService,
     MediaStorageUnavailable,
 )
-from app.core.media_policy import MAX_UPLOAD_BYTES, MediaValidationError
+from app.core.media_policy import MAX_UPLOAD_BYTES, MediaProcessingUnavailable, MediaValidationError
 
 
 router = APIRouter(prefix="/media", tags=["media"])
@@ -34,7 +34,7 @@ async def upload_media(
         while chunk := await file.read(1024 * 1024):
             chunks.extend(chunk)
             if len(chunks) > MAX_UPLOAD_BYTES:
-                raise MediaValidationError("Максимальный размер снимка — 10 МБ")
+                raise MediaValidationError("Максимальный размер файла — 50 МБ")
         return await media.upload(user["sub"], quest_id, bytes(chunks))
     except MediaValidationError as error:
         raise HTTPException(status_code=415, detail=str(error)) from error
@@ -43,6 +43,8 @@ async def upload_media(
     except MediaLimitError as error:
         raise HTTPException(status_code=429, detail="Лимит медиатеки: 100 снимков и 250 МБ на аккаунт") from error
     except MediaStorageUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except MediaProcessingUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     finally:
         await file.close()
@@ -66,12 +68,12 @@ async def get_media_file(
     asset_id: str, user: dict = Depends(get_current_user), media: MediaService = Depends(get_media_service),
 ):
     try:
-        data = await media.read_mine(user["sub"], asset_id)
+        data, content_type = await media.read_mine_with_type(user["sub"], asset_id)
     except MediaNotFoundError as error:
         raise HTTPException(status_code=404, detail="Файл не найден") from error
     except MediaStorageUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
-    return BinaryResponse(data, media_type="image/jpeg", headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+    return BinaryResponse(data, media_type=content_type, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @router.delete("/{asset_id}", status_code=204)

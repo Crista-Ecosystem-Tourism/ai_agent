@@ -16,9 +16,17 @@ class MediaStorage(Protocol):
     available: bool
 
     def ensure_available(self) -> None: ...
-    def put_pair(self, key: str, original: bytes, preview: bytes) -> None: ...
-    def read(self, key: str) -> bytes: ...
-    def delete_pair(self, key: str) -> None: ...
+    def put_pair(self, key: str, original: bytes, preview: bytes, content_type: str) -> None: ...
+    def read(self, key: str, content_type: str = "image/jpeg") -> bytes: ...
+    def delete_pair(self, key: str, content_type: str = "image/jpeg") -> None: ...
+
+
+def _extension(content_type: str) -> str:
+    extensions = {"image/jpeg": "jpg", "video/mp4": "mp4", "video/webm": "webm"}
+    try:
+        return extensions[content_type]
+    except KeyError as error:
+        raise MediaStorageUnavailable("Unsupported media type") from error
 
 
 class LocalPrivateMediaStorage:
@@ -33,26 +41,28 @@ class LocalPrivateMediaStorage:
             raise MediaStorageUnavailable("Хранилище файлов не настроено")
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    def put_pair(self, key: str, original: bytes, preview: bytes) -> None:
+    def put_pair(self, key: str, original: bytes, preview: bytes, content_type: str) -> None:
         self.ensure_available()
         assert self.root is not None
+        original_path = self.root / f"{key}.{_extension(content_type)}"
+        preview_path = self.root / f"{key}-preview.jpg"
         try:
-            (self.root / f"{key}.jpg").write_bytes(original)
-            (self.root / f"{key}-preview.jpg").write_bytes(preview)
+            original_path.write_bytes(original)
+            preview_path.write_bytes(preview)
         except Exception:
-            (self.root / f"{key}.jpg").unlink(missing_ok=True)
-            (self.root / f"{key}-preview.jpg").unlink(missing_ok=True)
+            original_path.unlink(missing_ok=True)
+            preview_path.unlink(missing_ok=True)
             raise
 
-    def read(self, key: str) -> bytes:
+    def read(self, key: str, content_type: str = "image/jpeg") -> bytes:
         self.ensure_available()
         assert self.root is not None
-        return (self.root / f"{key}.jpg").read_bytes()
+        return (self.root / f"{key}.{_extension(content_type)}").read_bytes()
 
-    def delete_pair(self, key: str) -> None:
+    def delete_pair(self, key: str, content_type: str = "image/jpeg") -> None:
         if self.root is None:
             return
-        (self.root / f"{key}.jpg").unlink(missing_ok=True)
+        (self.root / f"{key}.{_extension(content_type)}").unlink(missing_ok=True)
         (self.root / f"{key}-preview.jpg").unlink(missing_ok=True)
 
 
@@ -68,32 +78,33 @@ class S3PrivateMediaStorage:
     def ensure_available(self) -> None:
         return None
 
-    def _key(self, key: str) -> str:
-        return f"{self.prefix}/{key}.jpg" if self.prefix else f"{key}.jpg"
+    def _key(self, key: str, content_type: str) -> str:
+        filename = f"{key}.{_extension(content_type)}"
+        return f"{self.prefix}/{filename}" if self.prefix else filename
 
-    def put_pair(self, key: str, original: bytes, preview: bytes) -> None:
+    def put_pair(self, key: str, original: bytes, preview: bytes, content_type: str) -> None:
         try:
             self.client.put_object(
-                Bucket=self.bucket, Key=self._key(key), Body=original,
-                ContentType="image/jpeg", CacheControl="private, no-store",
+                Bucket=self.bucket, Key=self._key(key, content_type), Body=original,
+                ContentType=content_type, CacheControl="private, no-store",
             )
             self.client.put_object(
-                Bucket=self.bucket, Key=self._key(f"{key}-preview"), Body=preview,
+                Bucket=self.bucket, Key=self._key(f"{key}-preview", "image/jpeg"), Body=preview,
                 ContentType="image/jpeg", CacheControl="private, no-store",
             )
         except Exception:
             try:
-                self.delete_pair(key)
+                self.delete_pair(key, content_type)
             except Exception:
                 pass
             raise
 
-    def read(self, key: str) -> bytes:
-        result = self.client.get_object(Bucket=self.bucket, Key=self._key(key))
+    def read(self, key: str, content_type: str = "image/jpeg") -> bytes:
+        result = self.client.get_object(Bucket=self.bucket, Key=self._key(key, content_type))
         return result["Body"].read()
 
-    def delete_pair(self, key: str) -> None:
-        for object_key in (self._key(key), self._key(f"{key}-preview")):
+    def delete_pair(self, key: str, content_type: str = "image/jpeg") -> None:
+        for object_key in (self._key(key, content_type), self._key(f"{key}-preview", "image/jpeg")):
             self.client.delete_object(Bucket=self.bucket, Key=object_key)
 
 
@@ -106,14 +117,14 @@ class DisabledMediaStorage:
     def ensure_available(self) -> None:
         raise MediaStorageUnavailable(self.reason)
 
-    def put_pair(self, key: str, original: bytes, preview: bytes) -> None:
+    def put_pair(self, key: str, original: bytes, preview: bytes, content_type: str) -> None:
         self.ensure_available()
 
-    def read(self, key: str) -> bytes:
+    def read(self, key: str, content_type: str = "image/jpeg") -> bytes:
         self.ensure_available()
         raise AssertionError("unreachable")
 
-    def delete_pair(self, key: str) -> None:
+    def delete_pair(self, key: str, content_type: str = "image/jpeg") -> None:
         self.ensure_available()
 
 

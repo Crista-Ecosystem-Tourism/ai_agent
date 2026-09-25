@@ -20,13 +20,15 @@ class GameMediaAsset(Base):
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     width: Mapped[int] = mapped_column(Integer, nullable=False)
     height: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        CheckConstraint("content_type = 'image/jpeg'", name="game_media_jpeg_only"),
-        CheckConstraint("byte_size BETWEEN 1 AND 10485760", name="game_media_size_limit"),
+        CheckConstraint("content_type IN ('image/jpeg', 'video/mp4', 'video/webm')", name="game_media_type_allowed"),
+        CheckConstraint("byte_size BETWEEN 1 AND 52428800", name="game_media_size_limit"),
         CheckConstraint("width > 0 AND height > 0", name="game_media_dimensions_positive"),
+        CheckConstraint("duration_seconds IS NULL OR duration_seconds BETWEEN 1 AND 60", name="game_media_duration_limit"),
         Index("idx_game_media_owner_created", "owner_id", "created_at"),
         Index("idx_game_media_quest_created", "quest_id", "created_at"),
     )

@@ -40,7 +40,7 @@ class MediaStorageTests(unittest.TestCase):
     def test_s3_adapter_keeps_objects_private_and_round_trips_both_variants(self):
         client = FakeS3()
         storage = S3PrivateMediaStorage(client, "private-bucket", "/crista/photos/")
-        storage.put_pair("random-key", b"original", b"preview")
+        storage.put_pair("random-key", b"original", b"preview", "image/jpeg")
         self.assertEqual(storage.read("random-key"), b"original")
         self.assertEqual(storage.read("random-key-preview"), b"preview")
         self.assertEqual([call["Key"] for call in client.put_calls], [
@@ -55,11 +55,22 @@ class MediaStorageTests(unittest.TestCase):
     def test_filesystem_adapter_round_trips_and_deletes_files(self):
         with tempfile.TemporaryDirectory() as directory:
             storage = LocalPrivateMediaStorage(directory)
-            storage.put_pair("safe-random-key", b"original", b"preview")
+            storage.put_pair("safe-random-key", b"original", b"preview", "image/jpeg")
             self.assertEqual(storage.read("safe-random-key-preview"), b"preview")
             self.assertEqual(oct(Path(directory).stat().st_mode & 0o777), "0o700")
             storage.delete_pair("safe-random-key")
             self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_adapters_select_video_extension_but_keep_preview_as_jpeg(self):
+        client = FakeS3()
+        storage = S3PrivateMediaStorage(client, "private-bucket")
+        storage.put_pair("video-key", b"mp4", b"poster", "video/mp4")
+        self.assertIn(("private-bucket", "crista-media/video-key.mp4"), client.objects)
+        self.assertIn(("private-bucket", "crista-media/video-key-preview.jpg"), client.objects)
+        self.assertEqual(client.put_calls[0]["ContentType"], "video/mp4")
+        self.assertEqual(storage.read("video-key", "video/mp4"), b"mp4")
+        storage.delete_pair("video-key", "video/mp4")
+        self.assertEqual(client.objects, {})
 
     def test_factory_fails_closed_for_unconfigured_or_invalid_storage(self):
         self.assertIsInstance(create_media_storage({}), DisabledMediaStorage)
