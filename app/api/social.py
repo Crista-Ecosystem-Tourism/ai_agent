@@ -89,6 +89,22 @@ async def list_friends(
     return await social.list_friends(user["sub"])
 
 
+@router.get("/league")
+async def get_weekly_league(
+    user: dict = Depends(get_current_user),
+    social: SocialService = Depends(get_social_service),
+):
+    return await social.get_weekly_league(user["sub"])
+
+
+@router.post("/league/join")
+async def join_weekly_league(
+    user: dict = Depends(get_current_user),
+    social: SocialService = Depends(get_social_service),
+):
+    return await social.join_weekly_league(user["sub"])
+
+
 @router.delete("/friends/{friend_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_friend(
     friend_id: str,

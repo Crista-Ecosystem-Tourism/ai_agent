@@ -18,6 +18,7 @@ from app.core.social_tokens import (
     canonical_friend_pair,
     hash_invite_code,
 )
+from app.core.league_policy import LeagueScore, LeagueWeek, league_week, settle_weekly_ranks
 from app.db.models.auth import User
 from app.db.models.game import (
     GameCity,
@@ -25,10 +26,13 @@ from app.db.models.game import (
     GameContentTranslation,
     GameQuest,
     GameQuestCompletion,
+    GameRewardLedger,
 )
 from app.db.models.social import (
     FriendInvite,
     Friendship,
+    LeagueMembership,
+    LeagueSeason,
     SocialTeam,
     SocialTeamMembership,
     SocialTeamQuest,
@@ -529,6 +533,164 @@ class SocialService:
             payload["xp_awarded"] = caller_reward
             payload["rewards_credited"] = rewards_credited
             return payload
+
+    async def get_weekly_league(self, user_id: str) -> dict:
+        now = self._clock()
+        week = league_week(now)
+        async with self.session_factory() as db:
+            await self._close_expired_leagues(db, now)
+            await self._ensure_league_season(db, week)
+            membership = await db.get(LeagueMembership, (week.season_id, user_id))
+            if membership is None:
+                await db.commit()
+                return {
+                    "joined": False,
+                    "season_id": week.season_id,
+                    "starts_at": week.starts_at.isoformat(),
+                    "ends_at": week.ends_at.isoformat(),
+                    "members": [],
+                }
+
+            memberships = list((await db.scalars(
+                select(LeagueMembership).where(LeagueMembership.season_id == week.season_id)
+            )).all())
+            score_by_user = await self._league_scores(db, week, [row.user_id for row in memberships])
+            current_scores = [
+                LeagueScore(row.user_id, score_by_user.get(row.user_id, 0), row.rank)
+                for row in memberships
+            ]
+            settlement = {row.user_id: row for row in settle_weekly_ranks(current_scores)}
+
+            first_direction = await db.execute(
+                select(Friendship.user_b_id).where(Friendship.user_a_id == user_id)
+            )
+            second_direction = await db.execute(
+                select(Friendship.user_a_id).where(Friendship.user_b_id == user_id)
+            )
+            visible_user_ids = {user_id, *first_direction.scalars().all(), *second_direction.scalars().all()}
+            member_rows = (await db.execute(
+                select(LeagueMembership, User.name)
+                .join(User, User.id == LeagueMembership.user_id)
+                .where(
+                    LeagueMembership.season_id == week.season_id,
+                    LeagueMembership.user_id.in_(visible_user_ids),
+                )
+            )).all()
+            members = []
+            for row, name in member_rows:
+                settled = settlement[row.user_id]
+                members.append({
+                    "user_id": row.user_id,
+                    "name": name,
+                    "rank": row.rank,
+                    "place": settled.place,
+                    "weekly_xp": settled.weekly_xp,
+                    "projected_rank": settled.rank_after,
+                    "projected_movement": settled.movement,
+                    "is_self": row.user_id == user_id,
+                })
+            members.sort(key=lambda row: (row["rank"], row["place"], row["user_id"]))
+            await db.commit()
+            return {
+                "joined": True,
+                "season_id": week.season_id,
+                "starts_at": week.starts_at.isoformat(),
+                "ends_at": week.ends_at.isoformat(),
+                "rank": membership.rank,
+                "participant_count": len(memberships),
+                "members": members,
+            }
+
+    async def join_weekly_league(self, user_id: str) -> dict:
+        now = self._clock()
+        week = league_week(now)
+        async with self.session_factory() as db:
+            await self._close_expired_leagues(db, now)
+            await self._ensure_league_season(db, week)
+            existing = await db.get(LeagueMembership, (week.season_id, user_id))
+            if existing is None:
+                previous_rank = await db.scalar(
+                    select(LeagueMembership.final_rank)
+                    .join(LeagueSeason, LeagueSeason.id == LeagueMembership.season_id)
+                    .where(
+                        LeagueMembership.user_id == user_id,
+                        LeagueSeason.status == "closed",
+                        LeagueMembership.final_rank.is_not(None),
+                    )
+                    .order_by(LeagueSeason.ends_at.desc())
+                    .limit(1)
+                )
+                await db.execute(
+                    pg_insert(LeagueMembership)
+                    .values(
+                        season_id=week.season_id,
+                        user_id=user_id,
+                        rank=previous_rank or 1,
+                        joined_at=now,
+                        weekly_xp=0,
+                    )
+                    .on_conflict_do_nothing(index_elements=["season_id", "user_id"])
+                )
+            await db.commit()
+        return await self.get_weekly_league(user_id)
+
+    @staticmethod
+    async def _ensure_league_season(db: AsyncSession, week: LeagueWeek) -> None:
+        await db.execute(
+            pg_insert(LeagueSeason)
+            .values(
+                id=week.season_id,
+                starts_at=week.starts_at,
+                ends_at=week.ends_at,
+                status="open",
+            )
+            .on_conflict_do_nothing(index_elements=["id"])
+        )
+
+    @staticmethod
+    async def _league_scores(db: AsyncSession, week: LeagueWeek, user_ids: list[str]) -> dict[str, int]:
+        if not user_ids:
+            return {}
+        rows = await db.execute(
+            select(GameRewardLedger.user_id, func.sum(GameRewardLedger.xp))
+            .where(
+                GameRewardLedger.user_id.in_(user_ids),
+                GameRewardLedger.awarded_at >= week.starts_at,
+                GameRewardLedger.awarded_at < week.ends_at,
+                GameRewardLedger.xp > 0,
+            )
+            .group_by(GameRewardLedger.user_id)
+        )
+        return {user_id: int(total or 0) for user_id, total in rows.all()}
+
+    async def _close_expired_leagues(self, db: AsyncSession, now: datetime) -> None:
+        seasons = list((await db.scalars(
+            select(LeagueSeason)
+            .where(LeagueSeason.status == "open", LeagueSeason.ends_at <= now)
+            .order_by(LeagueSeason.ends_at)
+            .with_for_update()
+        )).all())
+        for season in seasons:
+            memberships = list((await db.scalars(
+                select(LeagueMembership)
+                .where(LeagueMembership.season_id == season.id)
+                .with_for_update()
+            )).all())
+            week = LeagueWeek(season.id, season.starts_at, season.ends_at)
+            score_by_user = await self._league_scores(db, week, [row.user_id for row in memberships])
+            outcomes = settle_weekly_ranks([
+                LeagueScore(row.user_id, score_by_user.get(row.user_id, 0), row.rank)
+                for row in memberships
+            ])
+            member_by_user = {row.user_id: row for row in memberships}
+            for outcome in outcomes:
+                row = member_by_user[outcome.user_id]
+                row.weekly_xp = outcome.weekly_xp
+                row.final_place = outcome.place
+                row.final_rank = outcome.rank_after
+                row.movement = outcome.movement
+            season.status = "closed"
+            season.closed_at = now
 
     @staticmethod
     async def _shared_quest_payload(
