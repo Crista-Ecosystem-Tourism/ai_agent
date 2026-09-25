@@ -79,11 +79,26 @@ def settle_weekly_ranks(scores: Sequence[LeagueScore]) -> list[LeagueRankChange]
         move_slots = ceil(len(ordered) * LEAGUE_PROMOTION_SHARE)
         promotion_floor: int | None = None
         relegation_ceiling: int | None = None
+        promotion_tie_crosses_cutoff = False
+        relegation_tie_crosses_cutoff = False
         if len(ordered) >= LEAGUE_MIN_PROMOTION_COHORT:
             promotion_floor = ordered[move_slots - 1].weekly_xp
             relegation_ceiling = ordered[len(ordered) - move_slots].weekly_xp
             if promotion_floor == relegation_ceiling:
                 promotion_floor = relegation_ceiling = None
+            else:
+                promotion_tie_size = sum(score.weekly_xp == promotion_floor for score in ordered)
+                promotion_strictly_above = sum(score.weekly_xp > promotion_floor for score in ordered)
+                promotion_tie_crosses_cutoff = (
+                    promotion_strictly_above < move_slots
+                    < promotion_strictly_above + promotion_tie_size
+                )
+                relegation_tie_size = sum(score.weekly_xp == relegation_ceiling for score in ordered)
+                relegation_strictly_below = sum(score.weekly_xp < relegation_ceiling for score in ordered)
+                relegation_tie_crosses_cutoff = (
+                    relegation_strictly_below < move_slots
+                    < relegation_strictly_below + relegation_tie_size
+                )
 
         previous_xp: int | None = None
         place = 0
@@ -93,9 +108,17 @@ def settle_weekly_ranks(scores: Sequence[LeagueScore]) -> list[LeagueRankChange]
                 previous_xp = score.weekly_xp
 
             rank_after = rank
-            if promotion_floor is not None and score.weekly_xp >= promotion_floor:
+            # If a tie spans the transition boundary, the tied group holds;
+            # otherwise the full group moves, even when it exceeds the quota.
+            if promotion_floor is not None and (
+                score.weekly_xp > promotion_floor
+                or (score.weekly_xp == promotion_floor and not promotion_tie_crosses_cutoff)
+            ):
                 rank_after = min(LEAGUE_RANK_MAX, rank + 1)
-            elif relegation_ceiling is not None and score.weekly_xp <= relegation_ceiling:
+            elif relegation_ceiling is not None and (
+                score.weekly_xp < relegation_ceiling
+                or (score.weekly_xp == relegation_ceiling and not relegation_tie_crosses_cutoff)
+            ):
                 rank_after = max(LEAGUE_RANK_MIN, rank - 1)
 
             movement = "promoted" if rank_after > rank else "relegated" if rank_after < rank else "held"

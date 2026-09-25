@@ -50,6 +50,28 @@ class LeagueSettlementTests(unittest.TestCase):
         settled = settle_weekly_ranks(scores)
         self.assertTrue(all(row.movement == "held" for row in settled))
 
+    def test_tie_at_promotion_cutoff_holds_but_clear_bottom_moves_down(self):
+        scores = [
+            LeagueScore("a", 100, 4), LeagueScore("b", 100, 4),
+            LeagueScore("c", 80, 4), LeagueScore("d", 40, 4),
+            LeagueScore("e", 20, 4),
+        ]
+        settled = {row.user_id: row for row in settle_weekly_ranks(scores)}
+        self.assertEqual("held", settled["a"].movement)
+        self.assertEqual("held", settled["b"].movement)
+        self.assertEqual("relegated", settled["e"].movement)
+
+    def test_tie_at_relegation_cutoff_holds_but_clear_top_moves_up(self):
+        scores = [
+            LeagueScore("a", 100, 4), LeagueScore("b", 80, 4),
+            LeagueScore("c", 60, 4), LeagueScore("d", 20, 4),
+            LeagueScore("e", 20, 4),
+        ]
+        settled = {row.user_id: row for row in settle_weekly_ranks(scores)}
+        self.assertEqual("promoted", settled["a"].movement)
+        self.assertEqual("held", settled["d"].movement)
+        self.assertEqual("held", settled["e"].movement)
+
     def test_rank_changes_are_settled_within_each_rank_cohort(self):
         scores = [
             LeagueScore("a", 100, 2), LeagueScore("b", 80, 2),
