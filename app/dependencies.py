@@ -15,7 +15,8 @@ from app.services.game_progress import GameProgressService
 from app.services.wiki import WikiService
 from app.services.social import SocialService
 from app.services.tips import TipService
-from app.services.media import LocalPrivateMediaStorage, MediaService
+from app.services.media import MediaService
+from app.core.media_storage import create_media_storage
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -79,6 +80,9 @@ def get_runtime_status() -> dict[str, object]:
     ))
     return {
         "core_ready": core_ready,
+        "media_storage": {
+            "available": bool(_media_service and _media_service.storage.available),
+        },
         "ai": {
             "available": _ai_available,
             "reason": None if _ai_available else _ai_unavailable_reason,
@@ -116,7 +120,7 @@ async def lifespan(app: FastAPI):
     _tip_service = TipService(_session_factory)
     _media_service = MediaService(
         _session_factory,
-        LocalPrivateMediaStorage(os.getenv("MEDIA_STORAGE_DIR")),
+        create_media_storage(),
     )
 
     api_key = _configured_openrouter_key()

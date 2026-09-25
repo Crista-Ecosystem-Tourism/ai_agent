@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+import asyncio
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,6 +13,7 @@ from app.core.media_policy import (
     MAX_USER_STORAGE_BYTES,
     sanitize_image,
 )
+from app.core.media_storage import MediaStorage, MediaStorageUnavailable
 from app.db.models.auth import User
 from app.db.models.game import GameQuest
 from app.db.models.media import GameMediaAsset
@@ -26,43 +27,8 @@ class MediaLimitError(RuntimeError):
     pass
 
 
-class MediaStorageUnavailable(RuntimeError):
-    pass
-
-
-class LocalPrivateMediaStorage:
-    """Private filesystem adapter. The configured directory must be a durable mount."""
-
-    def __init__(self, root: str | None):
-        self.root = Path(root).resolve() if root and root.strip() else None
-
-    def require_root(self) -> Path:
-        if self.root is None:
-            raise MediaStorageUnavailable("Хранилище файлов не настроено")
-        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        return self.root
-
-    def put_pair(self, key: str, original: bytes, preview: bytes) -> None:
-        root = self.require_root()
-        (root / f"{key}.jpg").write_bytes(original)
-        try:
-            (root / f"{key}-preview.jpg").write_bytes(preview)
-        except Exception:
-            (root / f"{key}.jpg").unlink(missing_ok=True)
-            raise
-
-    def read(self, key: str) -> bytes:
-        return (self.require_root() / f"{key}.jpg").read_bytes()
-
-    def delete_pair(self, key: str) -> None:
-        if self.root is None:
-            return
-        (self.root / f"{key}.jpg").unlink(missing_ok=True)
-        (self.root / f"{key}-preview.jpg").unlink(missing_ok=True)
-
-
 class MediaService:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], storage: LocalPrivateMediaStorage):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], storage: MediaStorage):
         self.session_factory = session_factory
         self.storage = storage
 
@@ -75,8 +41,8 @@ class MediaService:
             return [self._payload(asset) for asset in assets]
 
     async def upload(self, owner_id: str, quest_id: str, raw: bytes) -> dict:
-        sanitized = sanitize_image(raw)
-        self.storage.require_root()
+        sanitized = await asyncio.to_thread(sanitize_image, raw)
+        await asyncio.to_thread(self.storage.ensure_available)
         asset_id = uuid.uuid4().hex
         key = uuid.uuid4().hex
         now = datetime.now(timezone.utc)
@@ -93,7 +59,10 @@ class MediaService:
             )).one()
             if count >= MAX_ASSETS_PER_USER or used + len(sanitized.original) > MAX_USER_STORAGE_BYTES:
                 raise MediaLimitError
-            self.storage.put_pair(key, sanitized.original, sanitized.preview)
+            try:
+                await asyncio.to_thread(self.storage.put_pair, key, sanitized.original, sanitized.preview)
+            except Exception as error:
+                raise MediaStorageUnavailable("Хранилище файлов временно недоступно") from error
             asset = GameMediaAsset(
                 id=asset_id, owner_id=owner_id, quest_id=quest_id, storage_key=key,
                 preview_key=key, content_type="image/jpeg", byte_size=len(sanitized.original),
@@ -105,7 +74,10 @@ class MediaService:
                 await db.commit()
             except Exception:
                 await db.rollback()
-                self.storage.delete_pair(key)
+                try:
+                    await asyncio.to_thread(self.storage.delete_pair, key)
+                except Exception:
+                    pass
                 raise
             return self._payload(asset)
 
@@ -118,8 +90,8 @@ class MediaService:
                 raise MediaNotFoundError
             key = asset.preview_key if preview else asset.storage_key
         try:
-            return self.storage.read(f"{key}-preview" if preview else key)
-        except FileNotFoundError as error:
+            return await asyncio.to_thread(self.storage.read, f"{key}-preview" if preview else key)
+        except Exception as error:
             raise MediaStorageUnavailable("Файл временно недоступен") from error
 
     async def delete_mine(self, owner_id: str, asset_id: str) -> None:
@@ -130,9 +102,12 @@ class MediaService:
             if asset is None:
                 raise MediaNotFoundError
             key = asset.storage_key
+            try:
+                await asyncio.to_thread(self.storage.delete_pair, key)
+            except Exception as error:
+                raise MediaStorageUnavailable("Не удалось безопасно удалить файл из хранилища") from error
             await db.delete(asset)
             await db.commit()
-        self.storage.delete_pair(key)
 
     @staticmethod
     def _payload(asset: GameMediaAsset) -> dict:
