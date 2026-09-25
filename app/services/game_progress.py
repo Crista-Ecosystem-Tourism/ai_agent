@@ -3,8 +3,10 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
+from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
+import jwt
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -25,6 +27,7 @@ from app.db.models.game import (
 from app.db.models.saved_route import SavedRoute
 from app.db.models.wiki import WikiArticleVersion
 from app.core.social_tokens import shared_quest_reward_key
+from app.security.jwt import JWT_ALG, JWT_SECRET
 
 
 ONBOARDING_REVISION_ID = "onboarding-moscow-v1"
@@ -112,6 +115,60 @@ class GameProgressService:
                     for route in routes
                 ],
             }
+
+    async def create_mini_site_stamp_ticket(self, user_id: str, stamp_keys: list[str]) -> dict[str, Any]:
+        """Sign a short-lived, owner-scoped list of earned stamps for explicit sharing."""
+        if not isinstance(stamp_keys, list) or not 1 <= len(stamp_keys) <= 20:
+            raise ValueError("Select between one and twenty game stamps")
+        if any(not isinstance(key, str) or not key.strip() or len(key) > 120 for key in stamp_keys):
+            raise ValueError("Invalid game stamp selection")
+        if len(stamp_keys) != len(set(stamp_keys)):
+            raise ValueError("Game stamp selection contains duplicates")
+
+        async with self.session_factory() as db:
+            rows = (await db.execute(
+                select(GameStamp, GameContentRevision.payload)
+                .join(GameContentRevision, GameContentRevision.id == GameStamp.content_revision_id)
+                .where(GameStamp.user_id == user_id, GameStamp.stamp_key.in_(stamp_keys))
+            )).all()
+        by_key = {stamp.stamp_key: (stamp, payload) for stamp, payload in rows}
+        if set(by_key) != set(stamp_keys):
+            raise ValueError("One or more selected stamps were not earned by this account")
+
+        safe_stamps = []
+        for key in stamp_keys:
+            stamp, content = by_key[key]
+            fact = content.get("fact") if isinstance(content, dict) else None
+            source_url = fact.get("source_url") if isinstance(fact, dict) else None
+            source_label = fact.get("source_label") if isinstance(fact, dict) else None
+            fact_text = fact.get("text") if isinstance(fact, dict) else None
+            if isinstance(source_url, str):
+                try:
+                    parsed = urlsplit(source_url.strip())
+                    source_url = urlunsplit(("https", parsed.netloc, parsed.path, "", "")) \
+                        if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password else None
+                except ValueError:
+                    source_url = None
+            safe_stamps.append({
+                "key": stamp.stamp_key[:120],
+                "title": stamp.title.strip()[:200],
+                "earned_at": stamp.earned_at.isoformat(),
+                "fact": fact_text.strip()[:800] if isinstance(fact_text, str) and fact_text.strip() else None,
+                "source_label": source_label.strip()[:160] if isinstance(source_label, str) and source_label.strip() else None,
+                "source_url": source_url[:512] if isinstance(source_url, str) else None,
+            })
+
+        now = datetime.now(timezone.utc)
+        token = jwt.encode({
+            "sub": user_id,
+            "iss": "crista-ai-agent",
+            "aud": "crista-suitcase-mini-site",
+            "purpose": "trip-mini-site-stamps",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
+            "stamps": safe_stamps,
+        }, JWT_SECRET, algorithm=JWT_ALG)
+        return {"ticket": token, "stamps": safe_stamps}
 
     async def answer_red_square(self, user_id: str, answer_key: str) -> dict[str, Any]:
         async with self.session_factory() as db:

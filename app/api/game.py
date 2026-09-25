@@ -20,6 +20,10 @@ class RedSquareAnswerIn(BaseModel):
     answer_key: str = Field(min_length=1, max_length=80)
 
 
+class MiniSiteStampTicketIn(BaseModel):
+    stamp_keys: list[str] = Field(min_length=1, max_length=20)
+
+
 class BossAnswerItem(BaseModel):
     question_id: str = Field(min_length=1, max_length=120)
     answer_key: str = Field(min_length=1, max_length=80)
@@ -65,6 +69,18 @@ async def get_passport(
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     return await game.get_passport(user["sub"])
+
+
+@router.post("/passport/mini-site-ticket")
+async def create_mini_site_stamp_ticket(
+    payload: MiniSiteStampTicketIn,
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.create_mini_site_stamp_ticket(user["sub"], payload.stamp_keys)
+    except ValueError:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Выбранные игровые штампы недоступны")
 
 
 @router.get("/onboarding")
