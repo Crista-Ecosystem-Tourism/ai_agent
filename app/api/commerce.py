@@ -1,15 +1,42 @@
 """Server-owned catalog and entitlements. Hosted checkout is intentionally unavailable until configured."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse
-from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
 
 from app.dependencies import get_commerce_service
 from app.security.deps import get_current_user
-from app.services.commerce import CommerceCheckoutUnavailableError, CommerceService
+from app.services.commerce import CommerceCheckoutUnavailableError, CommerceNotFoundError, CommerceService, CommerceValidationError
 
 
 router = APIRouter(prefix="/commerce", tags=["commerce"])
+
+
+class AffiliateOfferCreateIn(BaseModel):
+    partner: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=160)
+    destination_url: str = Field(min_length=8, max_length=2048, pattern=r"^https://")
+    terms_url: str = Field(min_length=8, max_length=2048, pattern=r"^https://")
+    status: Literal["draft", "active", "archived"] = "draft"
+
+
+class AffiliateOfferUpdateIn(BaseModel):
+    partner: str | None = Field(default=None, min_length=1, max_length=120)
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    destination_url: str | None = Field(default=None, min_length=8, max_length=2048, pattern=r"^https://")
+    terms_url: str | None = Field(default=None, min_length=8, max_length=2048, pattern=r"^https://")
+    status: Literal["draft", "active", "archived"] | None = None
+
+
+def _affiliate_error(error: Exception) -> HTTPException:
+    if isinstance(error, PermissionError):
+        return HTTPException(status_code=HTTP_403_FORBIDDEN, detail=str(error))
+    if isinstance(error, CommerceNotFoundError):
+        return HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Партнёрское предложение не найдено")
+    return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(error))
 
 
 @router.get("/catalog")
@@ -20,6 +47,44 @@ async def list_catalog(commerce: CommerceService = Depends(get_commerce_service)
 @router.get("/affiliate-offers")
 async def list_affiliate_offers(commerce: CommerceService = Depends(get_commerce_service)):
     return await commerce.list_affiliate_offers()
+
+
+@router.get("/editor/affiliate-offers")
+async def list_affiliate_offers_for_editor(
+    user: dict = Depends(get_current_user),
+    commerce: CommerceService = Depends(get_commerce_service),
+):
+    try:
+        return await commerce.list_affiliate_offers_for_editor(user["sub"])
+    except PermissionError as error:
+        raise _affiliate_error(error)
+
+
+@router.post("/editor/affiliate-offers")
+async def create_affiliate_offer(
+    payload: AffiliateOfferCreateIn,
+    user: dict = Depends(get_current_user),
+    commerce: CommerceService = Depends(get_commerce_service),
+):
+    try:
+        return await commerce.create_affiliate_offer(user["sub"], payload.model_dump())
+    except (PermissionError, CommerceValidationError) as error:
+        raise _affiliate_error(error)
+
+
+@router.patch("/editor/affiliate-offers/{offer_id}")
+async def update_affiliate_offer(
+    offer_id: str,
+    payload: AffiliateOfferUpdateIn,
+    user: dict = Depends(get_current_user),
+    commerce: CommerceService = Depends(get_commerce_service),
+):
+    try:
+        return await commerce.update_affiliate_offer(
+            user["sub"], offer_id, payload.model_dump(exclude_unset=True)
+        )
+    except (PermissionError, CommerceNotFoundError, CommerceValidationError) as error:
+        raise _affiliate_error(error)
 
 
 @router.get("/affiliate-offers/{offer_id}/go")
