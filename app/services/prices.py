@@ -25,6 +25,15 @@ def _allowed_sources() -> dict[str, set[str]]:
     return allowed
 
 
+def is_allowed_price_source(source: str, source_url: str) -> bool:
+    parsed = urlsplit(source_url)
+    allowed_hosts = _allowed_sources().get(source)
+    return bool(
+        allowed_hosts and parsed.scheme == "https" and parsed.hostname
+        and parsed.hostname.lower() in allowed_hosts
+    )
+
+
 class PriceService:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self.session_factory = session_factory
@@ -33,18 +42,26 @@ class PriceService:
         self, *, subject_key: str, source: str, source_url: str, amount_minor: int,
         currency: str, observed_at: datetime | None = None, ttl: timedelta = timedelta(hours=6),
     ) -> str:
-        parsed = urlsplit(source_url)
-        allowed_hosts = _allowed_sources().get(source)
-        if (
-            not allowed_hosts or parsed.scheme != "https" or not parsed.hostname
-            or parsed.hostname.lower() not in allowed_hosts
-        ):
+        if not is_allowed_price_source(source, source_url):
             raise PriceSourceNotAllowedError("price source is not allow-listed")
         now = observed_at or datetime.now(timezone.utc)
-        if amount_minor < 0 or len(currency) != 3 or ttl <= timedelta():
+        if amount_minor < 0 or len(currency) != 3 or not currency.isalpha() or ttl <= timedelta():
             raise ValueError("invalid price observation")
         quote_id = uuid.uuid4().hex
         async with self.session_factory() as db:
+            existing = await db.scalar(select(PriceObservation).where(
+                PriceObservation.subject_key == subject_key,
+                PriceObservation.source == source,
+                PriceObservation.source_url == source_url,
+                PriceObservation.amount_minor == amount_minor,
+                PriceObservation.currency == currency.upper(),
+            ).order_by(PriceObservation.observed_at.desc()))
+            if existing is not None:
+                existing.observed_at = now
+                existing.expires_at = now + ttl
+                existing.updated_at = now
+                await db.commit()
+                return existing.id
             db.add(PriceObservation(
                 id=quote_id, subject_key=subject_key, source=source, source_url=source_url,
                 amount_minor=amount_minor, currency=currency.upper(), observed_at=now,

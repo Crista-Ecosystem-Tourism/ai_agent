@@ -16,11 +16,12 @@ from app.services.game_progress import GameProgressService
 from app.services.wiki import WikiService
 from app.services.social import SocialService
 from app.services.league_scheduler import league_settlement_loop
-from app.services.price_scheduler import price_watch_loop
+from app.services.price_scheduler import price_feed_loop, price_watch_loop
 from app.services.tips import TipService
 from app.services.media import MediaService
 from app.services.commerce import CommerceService
 from app.services.prices import PriceService
+from app.services.price_feeds import PriceFeedCollector
 from app.core.media_storage import create_media_storage
 
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -46,6 +47,7 @@ _tip_service: TipService | None = None
 _media_service: MediaService | None = None
 _commerce_service: CommerceService | None = None
 _price_service: PriceService | None = None
+_price_feed_collector: PriceFeedCollector | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -85,6 +87,7 @@ def get_runtime_status() -> dict[str, object]:
         _tip_service is not None,
         _media_service is not None,
         _commerce_service is not None,
+        _price_service is not None,
     ))
     return {
         "core_ready": core_ready,
@@ -101,7 +104,7 @@ def get_runtime_status() -> dict[str, object]:
 async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
     global _history_service, _chat_session_service, _user_service, _saved_route_service, _game_progress_service, _wiki_service, _social_service
-    global _tip_service, _price_service
+    global _tip_service, _price_service, _price_feed_collector
     global _media_service, _commerce_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
     global _ai_available, _ai_unavailable_reason
@@ -132,6 +135,7 @@ async def lifespan(app: FastAPI):
     )
     _commerce_service = CommerceService(_session_factory)
     _price_service = PriceService(_session_factory)
+    _price_feed_collector = PriceFeedCollector(_price_service, _http_client)
 
     api_key = _configured_openrouter_key()
     if api_key is None:
@@ -160,17 +164,23 @@ async def lifespan(app: FastAPI):
 
     league_settlement_task = asyncio.create_task(league_settlement_loop(_social_service))
     price_watch_task = asyncio.create_task(price_watch_loop(_price_service))
+    price_feed_task = asyncio.create_task(price_feed_loop(_price_feed_collector))
     try:
         yield
     finally:
         league_settlement_task.cancel()
         price_watch_task.cancel()
+        price_feed_task.cancel()
         try:
             await league_settlement_task
         except asyncio.CancelledError:
             pass
         try:
             await price_watch_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await price_feed_task
         except asyncio.CancelledError:
             pass
         if _http_client:
@@ -191,6 +201,7 @@ async def lifespan(app: FastAPI):
         _media_service = None
         _commerce_service = None
         _price_service = None
+        _price_feed_collector = None
         _llm_model = None
         _preferences_agent = None
         _search_agent = None
