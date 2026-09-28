@@ -115,3 +115,14 @@ async def publish_candidate(
         return await service.publish_candidate(user["sub"], candidate_id)
     except (PermissionError, StarRouteNotFoundError, StarRouteValidationError) as error:
         raise _service_error(error)
+
+
+@router.get("/{candidate_id}")
+async def get_published_route(
+    candidate_id: str,
+    service: StarRouteService = Depends(get_star_route_service),
+):
+    try:
+        return await service.get_published(candidate_id)
+    except StarRouteNotFoundError as error:
+        raise _service_error(error)

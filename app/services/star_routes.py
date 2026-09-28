@@ -169,6 +169,17 @@ class StarRouteService:
             )).all())
             return await self._candidate_payloads(db, candidates)
 
+    async def get_published(self, candidate_id: str) -> dict[str, Any]:
+        """Return one route only when its editorial publication is still active."""
+        async with self.session_factory() as db:
+            candidate = await db.get(StarRouteCandidate, candidate_id)
+            if candidate is None or candidate.status != "published":
+                raise StarRouteNotFoundError(candidate_id)
+            payloads = await self._candidate_payloads(db, [candidate])
+            if not payloads:
+                raise StarRouteNotFoundError(candidate_id)
+            return payloads[0]
+
     async def _candidate_payloads(self, db: AsyncSession, candidates: list[StarRouteCandidate]) -> list[dict[str, Any]]:
         if not candidates:
             return []
