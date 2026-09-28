@@ -136,11 +136,12 @@ class GameProgressService:
             city_ids = {city.id for city in cities}
             wiki_releases = {
                 slug: {
+                    "version_id": version_id,
                     "license": license.strip() if isinstance(license, str) and license.strip() else None,
                     "provenance_complete": has_complete_provenance(sources),
                 }
-                for slug, license, sources in (await db.execute(
-                    select(WikiArticle.slug, WikiArticleVersion.license, WikiArticleVersion.sources)
+                for slug, version_id, license, sources in (await db.execute(
+                    select(WikiArticle.slug, WikiArticleVersion.id, WikiArticleVersion.license, WikiArticleVersion.sources)
                     .join(WikiArticleVersion, WikiArticleVersion.id == WikiArticle.published_version_id)
                     .where(
                         WikiArticle.slug.in_(city_ids),
@@ -188,6 +189,10 @@ class GameProgressService:
                     "wiki_published": wiki_published,
                     "wiki_license": wiki_license,
                     "wiki_provenance_complete": wiki_provenance_complete,
+                    "wiki_reference": (
+                        {"slug": city.id, "version_id": wiki_release["version_id"]}
+                        if wiki_release else None
+                    ),
                     "readiness_blockers": readiness_blockers,
                     "status": "ready" if not readiness_blockers else "draft",
                 })
