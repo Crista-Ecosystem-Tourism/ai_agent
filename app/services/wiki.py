@@ -15,6 +15,25 @@ class WikiNotFoundError(RuntimeError):
     pass
 
 
+SOURCE_KINDS = {"official", "institutional", "reference", "licensed_media", "own_work"}
+RIGHTS_BASES = {"public_facts", "cc_by", "cc_by_sa", "public_domain", "licensed", "permission", "own_work"}
+
+
+def has_complete_provenance(sources: object) -> bool:
+    if not isinstance(sources, list) or not sources:
+        return False
+    for source in sources:
+        if not isinstance(source, dict):
+            return False
+        if not all(isinstance(source.get(key), str) and source[key].strip() for key in ("label", "url", "rights_url", "checked_at")):
+            return False
+        if not source["url"].startswith("https://") or not source["rights_url"].startswith("https://"):
+            return False
+        if source.get("source_kind") not in SOURCE_KINDS or source.get("rights_basis") not in RIGHTS_BASES:
+            return False
+    return True
+
+
 class WikiService:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self.session_factory = session_factory
@@ -75,8 +94,10 @@ class WikiService:
             return [self._author_version(article, version) for article, version in rows]
 
     async def create_draft(
-        self, user_id: str, slug: str, title: str, body: dict[str, Any], sources: list[dict[str, str]], license_name: str,
+        self, user_id: str, slug: str, title: str, body: dict[str, Any], sources: list[dict[str, Any]], license_name: str,
     ) -> dict[str, Any]:
+        if not has_complete_provenance(sources):
+            raise ValueError("Каждый источник должен содержать тип, основание прав, HTTPS-ссылку на условия и дату проверки")
         async with self.session_factory() as db:
             article = await db.scalar(select(WikiArticle).where(WikiArticle.slug == slug))
             now = datetime.now(timezone.utc)
@@ -124,6 +145,8 @@ class WikiService:
                 raise WikiNotFoundError(version_id)
             if version.status != "review":
                 raise ValueError("Опубликовать можно только версию на review")
+            if not has_complete_provenance(version.sources):
+                raise ValueError("Опубликовать можно только версию с полной матрицей провенанса")
             article = await db.get(WikiArticle, version.article_id)
             if article is None:
                 raise WikiNotFoundError(version.article_id)

@@ -29,6 +29,7 @@ from app.db.models.wiki import WikiArticle, WikiArticleVersion
 from app.db.models.auth import User
 from app.core.social_tokens import shared_quest_reward_key
 from app.security.jwt import JWT_ALG, JWT_SECRET
+from app.services.wiki import has_complete_provenance
 
 
 ONBOARDING_REVISION_ID = "onboarding-moscow-v1"
@@ -133,10 +134,10 @@ class GameProgressService:
                 )).all()
             } if content_ids else {}
             city_ids = {city.id for city in cities}
-            wiki_licenses = {
-                slug: license.strip()
-                for slug, license in (await db.execute(
-                    select(WikiArticle.slug, WikiArticleVersion.license)
+            wiki_releases = {
+                slug: {"license": license.strip(), "provenance_complete": has_complete_provenance(sources)}
+                for slug, license, sources in (await db.execute(
+                    select(WikiArticle.slug, WikiArticleVersion.license, WikiArticleVersion.sources)
                     .join(WikiArticleVersion, WikiArticleVersion.id == WikiArticle.published_version_id)
                     .where(
                         WikiArticle.slug.in_(city_ids),
@@ -157,9 +158,11 @@ class GameProgressService:
                     if content and content.is_published and isinstance(fact, dict) and isinstance(fact.get("source_url"), str):
                         source_ready += 1
                 meets_required_count = len(published_quests) >= city.required_quest_count
-                wiki_license = wiki_licenses.get(city.id)
+                wiki_release = wiki_releases.get(city.id)
+                wiki_license = wiki_release["license"] if wiki_release else None
                 wiki_published = wiki_license is not None
-                ready = city.is_published and meets_required_count and source_ready == len(published_quests) and wiki_published
+                wiki_provenance_complete = bool(wiki_release and wiki_release["provenance_complete"])
+                ready = city.is_published and meets_required_count and source_ready == len(published_quests) and wiki_published and wiki_provenance_complete
                 rows.append({
                     "id": city.id,
                     "name": city.name,
@@ -170,6 +173,7 @@ class GameProgressService:
                     "sourced_quest_count": source_ready,
                     "wiki_published": wiki_published,
                     "wiki_license": wiki_license,
+                    "wiki_provenance_complete": wiki_provenance_complete,
                     "status": "ready" if ready else "draft",
                 })
             return rows

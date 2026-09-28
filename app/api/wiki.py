@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,7 +17,11 @@ SLUG_RE = re.compile(r"^[a-z0-9-]{2,80}$")
 
 class WikiSourceIn(BaseModel):
     label: str = Field(min_length=1, max_length=160)
-    url: str = Field(min_length=8, max_length=2048)
+    url: str = Field(min_length=8, max_length=2048, pattern=r"^https://")
+    source_kind: Literal["official", "institutional", "reference", "licensed_media", "own_work"]
+    rights_basis: Literal["public_facts", "cc_by", "cc_by_sa", "public_domain", "licensed", "permission", "own_work"]
+    rights_url: str = Field(min_length=8, max_length=2048, pattern=r"^https://")
+    checked_at: datetime
 
 
 class WikiDraftIn(BaseModel):
@@ -65,7 +70,7 @@ async def create_wiki_draft(
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Slug должен состоять из строчных латинских букв, цифр и дефисов")
     return await wiki.create_draft(
         user["sub"], payload.slug, payload.title, payload.body,
-        [source.model_dump() for source in payload.sources], payload.license,
+        [source.model_dump(mode="json") for source in payload.sources], payload.license,
     )
 
 
