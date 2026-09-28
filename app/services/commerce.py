@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import uuid
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models.commerce import AffiliateOffer, CommerceEntitlement, CommerceProduct
+from app.db.models.commerce import AffiliateOffer, AffiliateOfferClick, CommerceEntitlement, CommerceProduct
 
 
 class CommerceCheckoutUnavailableError(RuntimeError):
@@ -39,6 +40,22 @@ class CommerceService:
         async with self.session_factory() as db:
             rows = (await db.scalars(select(AffiliateOffer).where(AffiliateOffer.status == "active").order_by(AffiliateOffer.partner, AffiliateOffer.title))).all()
         return [{"id": row.id, "partner": row.partner, "title": row.title, "destination_url": row.destination_url, "terms_url": row.terms_url} for row in rows]
+
+    async def register_affiliate_offer_click(self, offer_id: str) -> str | None:
+        """Return an active destination and retain no visitor identifiers for click measurement."""
+        now = self._clock()
+        async with self.session_factory() as db:
+            offer = await db.scalar(
+                select(AffiliateOffer).where(
+                    AffiliateOffer.id == offer_id,
+                    AffiliateOffer.status == "active",
+                )
+            )
+            if offer is None:
+                return None
+            db.add(AffiliateOfferClick(id=uuid.uuid4().hex, offer_id=offer.id, occurred_at=now))
+            await db.commit()
+            return offer.destination_url
 
     async def list_entitlements(self, user_id: str) -> dict:
         now = self._clock()

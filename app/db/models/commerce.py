@@ -113,3 +113,17 @@ class AffiliateOffer(Base, TimestampMixin):
     terms_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
     __table_args__ = (CheckConstraint("status IN ('draft', 'active', 'archived')", name="affiliate_offer_status"),)
+
+
+class AffiliateOfferClick(Base):
+    """Minimal aggregate-friendly record of a transition to an active affiliate offer."""
+
+    __tablename__ = "affiliate_offer_click"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    offer_id: Mapped[str] = mapped_column(
+        ForeignKey("affiliate_offer.id", ondelete="CASCADE"), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("idx_affiliate_offer_click_offer_time", "offer_id", "occurred_at"),)
