@@ -201,6 +201,9 @@ class TipService:
                 created_at=now,
             )
             db.add(report)
+            # GameTipModerationAction references the report by scalar ID rather
+            # than an ORM relationship, so flush the parent before recording it.
+            await db.flush()
             self._record_action(db, tip.id, reporter_id, "tip_reported", {"report_id": report.id, "reason": reason}, now, report.id)
             await db.commit()
             return {"id": report.id, "tip_id": tip_id, "status": report.status, "created_at": now.isoformat()}
