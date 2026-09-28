@@ -17,6 +17,7 @@ from app.api.social import router as social_router
 from app.api.tips import router as tips_router
 from app.api.media import router as media_router
 from app.api.commerce import router as commerce_router
+from app.api.prices import router as prices_router
 
 
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -68,6 +69,7 @@ app.include_router(social_router)
 app.include_router(tips_router)
 app.include_router(media_router)
 app.include_router(commerce_router)
+app.include_router(prices_router)
 
 @app.get("/health")
 def health():

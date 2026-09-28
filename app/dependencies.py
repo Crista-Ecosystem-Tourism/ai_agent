@@ -19,6 +19,7 @@ from app.services.league_scheduler import league_settlement_loop
 from app.services.tips import TipService
 from app.services.media import MediaService
 from app.services.commerce import CommerceService
+from app.services.prices import PriceService
 from app.core.media_storage import create_media_storage
 
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -43,6 +44,7 @@ _social_service: SocialService | None = None
 _tip_service: TipService | None = None
 _media_service: MediaService | None = None
 _commerce_service: CommerceService | None = None
+_price_service: PriceService | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -98,7 +100,7 @@ def get_runtime_status() -> dict[str, object]:
 async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
     global _history_service, _chat_session_service, _user_service, _saved_route_service, _game_progress_service, _wiki_service, _social_service
-    global _tip_service
+    global _tip_service, _price_service
     global _media_service, _commerce_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
     global _ai_available, _ai_unavailable_reason
@@ -128,6 +130,7 @@ async def lifespan(app: FastAPI):
         create_media_storage(),
     )
     _commerce_service = CommerceService(_session_factory)
+    _price_service = PriceService(_session_factory)
 
     api_key = _configured_openrouter_key()
     if api_key is None:
@@ -180,6 +183,7 @@ async def lifespan(app: FastAPI):
         _tip_service = None
         _media_service = None
         _commerce_service = None
+        _price_service = None
         _llm_model = None
         _preferences_agent = None
         _search_agent = None
@@ -233,6 +237,9 @@ def get_media_service() -> MediaService:
 
 def get_commerce_service() -> CommerceService:
     return _commerce_service
+
+def get_price_service() -> PriceService:
+    return _price_service
 
 def get_message_processor() -> MessageProcessor:
     if _message_processor is None:

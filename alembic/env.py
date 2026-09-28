@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 load_dotenv()
 
 from app.db.models.base import Base
-from app.db.models import chat, auth, commerce, game, saved_route, wiki, social, tip, media
+from app.db.models import chat, auth, commerce, game, saved_route, wiki, social, tip, media, price
 from app.db.dsn import get_database_url
 
 config = context.config
