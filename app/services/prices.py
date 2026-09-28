@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models.price import PriceObservation
+from app.db.models.price import PriceObservation, PriceWatch
 
 
 class PriceSourceNotAllowedError(ValueError):
@@ -64,6 +64,23 @@ class PriceService:
             "currency": row.currency, "source": row.source, "source_url": row.source_url,
             "observed_at": row.observed_at.isoformat(), "expires_at": row.expires_at.isoformat(),
         }
+
+    async def subscribe(self, user_id: str, subject_key: str, threshold_minor: int, currency: str) -> dict:
+        now = datetime.now(timezone.utc)
+        async with self.session_factory() as db:
+            watch = await db.scalar(select(PriceWatch).where(PriceWatch.user_id == user_id, PriceWatch.subject_key == subject_key, PriceWatch.currency == currency))
+            if watch is None:
+                watch = PriceWatch(id=uuid.uuid4().hex, user_id=user_id, subject_key=subject_key, threshold_minor=threshold_minor, currency=currency, active=True, created_at=now, updated_at=now)
+                db.add(watch)
+            else:
+                watch.threshold_minor, watch.active, watch.updated_at = threshold_minor, True, now
+            await db.commit()
+            return {"id": watch.id, "subject_key": watch.subject_key, "threshold_minor": watch.threshold_minor, "currency": watch.currency, "active": watch.active}
+
+    async def list_watches(self, user_id: str) -> list[dict]:
+        async with self.session_factory() as db:
+            rows = (await db.scalars(select(PriceWatch).where(PriceWatch.user_id == user_id).order_by(PriceWatch.created_at.desc()))).all()
+        return [{"id": row.id, "subject_key": row.subject_key, "threshold_minor": row.threshold_minor, "currency": row.currency, "active": row.active} for row in rows]
 
     async def evaluate_budget(self, budget_minor: int, currency: str, subject_keys: list[str]) -> dict:
         quotes = [await self.latest(subject_key) for subject_key in subject_keys]
