@@ -1,6 +1,6 @@
 """add editorial star route pipeline
 
-Revision ID: a0b1c2d3e4f5
+Revision ID: f0e1d2c3b4a5
 Revises: z9a0b1c2d3e4
 """
 from alembic import op
@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "a0b1c2d3e4f5"
+revision = "f0e1d2c3b4a5"
 down_revision = "z9a0b1c2d3e4"
 branch_labels = depends_on = None
 

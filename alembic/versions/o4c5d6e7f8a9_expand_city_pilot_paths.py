@@ -43,10 +43,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    quest_ids = "'spb-collection', 'spb-fountains', 'spb-peterhof-history', 'sochi-forest', 'sochi-mzymta', 'sochi-park-area'"
-    revision_ids = "'spb-collection-v1', 'spb-fountains-v1', 'spb-peterhof-history-v1', 'sochi-forest-v1', 'sochi-mzymta-v1', 'sochi-park-area-v1'"
-    op.execute(sa.text(f"DELETE FROM game_quest_completion WHERE quest_id IN ({quest_ids})"))
-    op.execute(sa.text(f"DELETE FROM game_quest WHERE id IN ({quest_ids})"))
-    op.execute(sa.text(f"DELETE FROM game_content_revision WHERE id IN ({revision_ids})"))
+    quest_ids = ["spb-collection", "spb-fountains", "spb-peterhof-history", "sochi-forest", "sochi-mzymta", "sochi-park-area"]
+    revision_ids = ["spb-collection-v1", "spb-fountains-v1", "spb-peterhof-history-v1", "sochi-forest-v1", "sochi-mzymta-v1", "sochi-park-area-v1"]
+    bind = op.get_bind()
+    for table_name, column_name, values in [
+        ("game_quest_completion", "quest_id", quest_ids),
+        ("game_quest", "id", quest_ids),
+        ("game_content_revision", "id", revision_ids),
+    ]:
+        table = sa.table(table_name, sa.column(column_name, sa.String()))
+        bind.execute(sa.delete(table).where(table.c[column_name].in_(values)))
     op.execute(sa.text("DELETE FROM game_district WHERE id IN ('spb-winter-palace', 'spb-fountains', 'spb-peterhof-history', 'sochi-forest', 'sochi-mzymta', 'sochi-park-area')"))
     op.execute(sa.text("UPDATE game_city SET required_quest_count = 2 WHERE id IN ('st-petersburg', 'sochi')"))

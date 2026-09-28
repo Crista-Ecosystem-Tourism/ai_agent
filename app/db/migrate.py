@@ -7,7 +7,7 @@ from pathlib import Path
 
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
-from sqlalchemy import text
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.db.dsn import get_database_url
@@ -40,25 +40,33 @@ async def adopt_legacy_version_table() -> None:
     service's migration state.
     """
     engine = create_async_engine(get_database_url(), pool_pre_ping=True)
+    metadata = sa.MetaData()
+    version_table = sa.Table(
+        VERSION_TABLE,
+        metadata,
+        sa.Column("version_num", sa.String(32), nullable=False),
+    )
     try:
         async with engine.begin() as connection:
             own_exists = await connection.scalar(
-                text("SELECT to_regclass(:table_name)"),
+                sa.text("SELECT to_regclass(:table_name)"),
                 {"table_name": f"public.{VERSION_TABLE}"},
             )
             if own_exists:
                 return
 
             legacy_exists = await connection.scalar(
-                text("SELECT to_regclass(:table_name)"),
+                sa.text("SELECT to_regclass(:table_name)"),
                 {"table_name": f"public.{LEGACY_VERSION_TABLE}"},
             )
             if not legacy_exists:
                 return
 
-            rows = await connection.execute(
-                text(f'SELECT version_num FROM "{LEGACY_VERSION_TABLE}"')
+            legacy_table = sa.table(
+                LEGACY_VERSION_TABLE,
+                sa.column("version_num", sa.String(32)),
             )
+            rows = await connection.execute(sa.select(legacy_table.c.version_num))
             legacy_revisions = {row[0] for row in rows}
             if not _can_adopt_legacy_revisions(legacy_revisions, _known_revisions()):
                 raise RuntimeError(
@@ -66,17 +74,9 @@ async def adopt_legacy_version_table() -> None:
                     "stop migration and resolve the database state manually."
                 )
 
-            await connection.execute(
-                text(
-                    f'CREATE TABLE "{VERSION_TABLE}" '
-                    "(version_num VARCHAR(32) NOT NULL)"
-                )
-            )
+            await connection.run_sync(lambda sync_connection: version_table.create(sync_connection))
             for revision in legacy_revisions:
-                await connection.execute(
-                    text(f'INSERT INTO "{VERSION_TABLE}" (version_num) VALUES (:revision)'),
-                    {"revision": revision},
-                )
+                await connection.execute(sa.insert(version_table).values(version_num=revision))
     finally:
         await engine.dispose()
 

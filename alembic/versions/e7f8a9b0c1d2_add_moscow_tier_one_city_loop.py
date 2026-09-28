@@ -255,14 +255,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    quest_ids = "'moscow-annunciation-cathedral', 'moscow-gum', 'moscow-zaryadye', 'moscow-tretyakov-gallery', 'moscow-bolshoi-theatre', 'moscow-metro', 'moscow-vdnh'"
-    content_ids = "'moscow-annunciation-cathedral-v1', 'moscow-gum-v1', 'moscow-zaryadye-v1', 'moscow-tretyakov-gallery-v1', 'moscow-bolshoi-theatre-v1', 'moscow-metro-v1', 'moscow-vdnh-v1'"
-    op.execute(sa.text(f"DELETE FROM game_quest_completion WHERE quest_id IN ({quest_ids})"))
-    op.execute(sa.text(f"DELETE FROM game_reward_ledger WHERE quest_id IN ({quest_ids})"))
-    op.execute(sa.text(f"DELETE FROM game_stamp WHERE content_revision_id IN ({content_ids})"))
-    op.execute(sa.text(f"DELETE FROM game_attempt WHERE content_revision_id IN ({content_ids})"))
-    op.execute(sa.text(f"DELETE FROM game_quest WHERE id IN ({quest_ids})"))
-    op.execute(sa.text(f"DELETE FROM game_content_revision WHERE id IN ({content_ids})"))
+    quest_ids = ["moscow-annunciation-cathedral", "moscow-gum", "moscow-zaryadye", "moscow-tretyakov-gallery", "moscow-bolshoi-theatre", "moscow-metro", "moscow-vdnh"]
+    content_ids = ["moscow-annunciation-cathedral-v1", "moscow-gum-v1", "moscow-zaryadye-v1", "moscow-tretyakov-gallery-v1", "moscow-bolshoi-theatre-v1", "moscow-metro-v1", "moscow-vdnh-v1"]
+    bind = op.get_bind()
+    for table_name, column_name, values in [
+        ("game_quest_completion", "quest_id", quest_ids),
+        ("game_reward_ledger", "quest_id", quest_ids),
+        ("game_stamp", "content_revision_id", content_ids),
+        ("game_attempt", "content_revision_id", content_ids),
+        ("game_quest", "id", quest_ids),
+        ("game_content_revision", "id", content_ids),
+    ]:
+        table = sa.table(table_name, sa.column(column_name, sa.String()))
+        bind.execute(sa.delete(table).where(table.c[column_name].in_(values)))
     op.execute(sa.text("UPDATE game_quest SET district_id = NULL WHERE city_id = 'moscow'"))
     op.drop_constraint("fk_game_quest_district", "game_quest", type_="foreignkey")
     op.drop_column("game_quest", "district_id")
