@@ -135,7 +135,10 @@ class GameProgressService:
             } if content_ids else {}
             city_ids = {city.id for city in cities}
             wiki_releases = {
-                slug: {"license": license.strip(), "provenance_complete": has_complete_provenance(sources)}
+                slug: {
+                    "license": license.strip() if isinstance(license, str) and license.strip() else None,
+                    "provenance_complete": has_complete_provenance(sources),
+                }
                 for slug, license, sources in (await db.execute(
                     select(WikiArticle.slug, WikiArticleVersion.license, WikiArticleVersion.sources)
                     .join(WikiArticleVersion, WikiArticleVersion.id == WikiArticle.published_version_id)
@@ -144,7 +147,6 @@ class GameProgressService:
                         WikiArticleVersion.status == "published",
                     )
                 )).all()
-                if isinstance(license, str) and license.strip()
             } if city_ids else {}
 
             rows: list[dict[str, Any]] = []
@@ -160,9 +162,21 @@ class GameProgressService:
                 meets_required_count = len(published_quests) >= city.required_quest_count
                 wiki_release = wiki_releases.get(city.id)
                 wiki_license = wiki_release["license"] if wiki_release else None
-                wiki_published = wiki_license is not None
+                wiki_published = wiki_release is not None
                 wiki_provenance_complete = bool(wiki_release and wiki_release["provenance_complete"])
-                ready = city.is_published and meets_required_count and source_ready == len(published_quests) and wiki_published and wiki_provenance_complete
+                readiness_blockers = []
+                if not city.is_published:
+                    readiness_blockers.append("city_unpublished")
+                if not meets_required_count:
+                    readiness_blockers.append("lesson_count")
+                if source_ready != len(published_quests):
+                    readiness_blockers.append("lesson_sources")
+                if not wiki_published:
+                    readiness_blockers.append("wiki_missing")
+                elif wiki_license is None:
+                    readiness_blockers.append("wiki_license")
+                if wiki_published and not wiki_provenance_complete:
+                    readiness_blockers.append("wiki_provenance")
                 rows.append({
                     "id": city.id,
                     "name": city.name,
@@ -174,7 +188,8 @@ class GameProgressService:
                     "wiki_published": wiki_published,
                     "wiki_license": wiki_license,
                     "wiki_provenance_complete": wiki_provenance_complete,
-                    "status": "ready" if ready else "draft",
+                    "readiness_blockers": readiness_blockers,
+                    "status": "ready" if not readiness_blockers else "draft",
                 })
             return rows
 
