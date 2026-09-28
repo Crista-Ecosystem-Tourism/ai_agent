@@ -18,6 +18,7 @@ from app.services.social import SocialService
 from app.services.league_scheduler import league_settlement_loop
 from app.services.tips import TipService
 from app.services.media import MediaService
+from app.services.commerce import CommerceService
 from app.core.media_storage import create_media_storage
 
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -41,6 +42,7 @@ _wiki_service: WikiService | None = None
 _social_service: SocialService | None = None
 _tip_service: TipService | None = None
 _media_service: MediaService | None = None
+_commerce_service: CommerceService | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -79,6 +81,7 @@ def get_runtime_status() -> dict[str, object]:
         _social_service is not None,
         _tip_service is not None,
         _media_service is not None,
+        _commerce_service is not None,
     ))
     return {
         "core_ready": core_ready,
@@ -96,7 +99,7 @@ async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
     global _history_service, _chat_session_service, _user_service, _saved_route_service, _game_progress_service, _wiki_service, _social_service
     global _tip_service
-    global _media_service
+    global _media_service, _commerce_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
     global _ai_available, _ai_unavailable_reason
 
@@ -124,6 +127,7 @@ async def lifespan(app: FastAPI):
         _session_factory,
         create_media_storage(),
     )
+    _commerce_service = CommerceService(_session_factory)
 
     api_key = _configured_openrouter_key()
     if api_key is None:
@@ -175,6 +179,7 @@ async def lifespan(app: FastAPI):
         _social_service = None
         _tip_service = None
         _media_service = None
+        _commerce_service = None
         _llm_model = None
         _preferences_agent = None
         _search_agent = None
@@ -224,6 +229,10 @@ def get_tip_service() -> TipService:
 
 def get_media_service() -> MediaService:
     return _media_service
+
+
+def get_commerce_service() -> CommerceService:
+    return _commerce_service
 
 def get_message_processor() -> MessageProcessor:
     if _message_processor is None:
