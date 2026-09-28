@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from app.core.services.processor import ProcessorResult
+from app.core.models import UserPreferences
 from app.api.schemas import SearchResult, Place
 
 
@@ -74,6 +75,7 @@ def test_send_message_returns_route_geojson():
     mock_chat_srv = AsyncMock()
     mock_chat_srv.get_owner = AsyncMock(return_value=None)
     mock_chat_srv.verify_anonymous_access = AsyncMock(return_value=True)
+    mock_chat_srv.load_preferences = AsyncMock(return_value=UserPreferences())
     mock_chat_srv.touch = AsyncMock()
 
     mock_history_srv = AsyncMock()
@@ -137,6 +139,7 @@ def test_send_message_without_route():
     mock_chat_srv = AsyncMock()
     mock_chat_srv.get_owner = AsyncMock(return_value=None)
     mock_chat_srv.verify_anonymous_access = AsyncMock(return_value=True)
+    mock_chat_srv.load_preferences = AsyncMock(return_value=UserPreferences())
     mock_chat_srv.touch = AsyncMock()
 
     mock_history_srv = AsyncMock()
