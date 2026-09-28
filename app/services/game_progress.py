@@ -313,6 +313,14 @@ class GameProgressService:
             )
             if city is None:
                 raise GameContentUnavailableError("City path is not published")
+            city_wiki = (await db.execute(
+                select(WikiArticle.slug, WikiArticleVersion.id)
+                .join(WikiArticleVersion, WikiArticleVersion.id == WikiArticle.published_version_id)
+                .where(
+                    WikiArticle.slug == city.id,
+                    WikiArticleVersion.status == "published",
+                )
+            )).one_or_none()
             quests = list((await db.scalars(
                 select(GameQuest)
                 .where(GameQuest.city_id == city.id, GameQuest.is_published.is_(True))
@@ -356,6 +364,10 @@ class GameProgressService:
                     "completion_stamp": (
                         {"key": city.completion_stamp_key, "title": city.completion_stamp_title}
                         if city.completion_stamp_key and city.completion_stamp_title else None
+                    ),
+                    "wiki_reference": (
+                        {"slug": city_wiki.slug, "version_id": city_wiki.id}
+                        if city_wiki is not None else None
                     ),
                 },
                 "profile": self._profile_payload(profile),
