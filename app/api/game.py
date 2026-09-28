@@ -2,7 +2,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_409_CONFLICT, HTTP_503_SERVICE_UNAVAILABLE
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_503_SERVICE_UNAVAILABLE
 
 from app.dependencies import get_game_progress_service
 from app.security.deps import get_current_user
@@ -69,6 +69,17 @@ async def get_passport(
     game: GameProgressService = Depends(get_game_progress_service),
 ):
     return await game.get_passport(user["sub"])
+
+
+@router.get("/cities/readiness")
+async def get_city_readiness(
+    user: dict = Depends(get_current_user),
+    game: GameProgressService = Depends(get_game_progress_service),
+):
+    try:
+        return await game.get_city_readiness(user["sub"])
+    except PermissionError as error:
+        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=str(error))
 
 
 @router.post("/passport/mini-site-ticket")

@@ -26,6 +26,7 @@ from app.db.models.game import (
 )
 from app.db.models.saved_route import SavedRoute
 from app.db.models.wiki import WikiArticleVersion
+from app.db.models.auth import User
 from app.core.social_tokens import shared_quest_reward_key
 from app.security.jwt import JWT_ALG, JWT_SECRET
 
@@ -115,6 +116,46 @@ class GameProgressService:
                     for route in routes
                 ],
             }
+
+    async def get_city_readiness(self, editor_id: str) -> list[dict[str, Any]]:
+        """Expose editorial release readiness without changing player-visible unlocks."""
+        async with self.session_factory() as db:
+            editor = await db.get(User, editor_id)
+            if editor is None or not editor.is_editor:
+                raise PermissionError("Требуется роль редактора")
+            cities = list((await db.scalars(select(GameCity).order_by(GameCity.tier, GameCity.name))).all())
+            quests = list((await db.scalars(select(GameQuest))).all())
+            content_ids = {quest.content_revision_id for quest in quests}
+            content_by_id = {
+                content.id: content
+                for content in (await db.scalars(
+                    select(GameContentRevision).where(GameContentRevision.id.in_(content_ids))
+                )).all()
+            } if content_ids else {}
+
+            rows: list[dict[str, Any]] = []
+            for city in cities:
+                city_quests = [quest for quest in quests if quest.city_id == city.id]
+                published_quests = [quest for quest in city_quests if quest.is_published]
+                source_ready = 0
+                for quest in published_quests:
+                    content = content_by_id.get(quest.content_revision_id)
+                    fact = content.payload.get("fact") if content and isinstance(content.payload, dict) else None
+                    if content and content.is_published and isinstance(fact, dict) and isinstance(fact.get("source_url"), str):
+                        source_ready += 1
+                meets_required_count = len(published_quests) >= city.required_quest_count
+                ready = city.is_published and meets_required_count and source_ready == len(published_quests)
+                rows.append({
+                    "id": city.id,
+                    "name": city.name,
+                    "tier": city.tier,
+                    "published": city.is_published,
+                    "required_quest_count": city.required_quest_count,
+                    "published_quest_count": len(published_quests),
+                    "sourced_quest_count": source_ready,
+                    "status": "ready" if ready else "draft",
+                })
+            return rows
 
     async def create_mini_site_stamp_ticket(self, user_id: str, stamp_keys: list[str]) -> dict[str, Any]:
         """Sign a short-lived, owner-scoped list of earned stamps for explicit sharing."""
