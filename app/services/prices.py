@@ -150,22 +150,64 @@ class PriceService:
         total = sum(int(quote["amount_minor"]) for quote in quotes)
         return {"status": "feasible" if total <= budget_minor else "infeasible", "budget_minor": budget_minor, "currency": currency, "total_minor": total, "remaining_minor": budget_minor - total, "missing": [], "currency_mismatch": []}
 
-    async def plan_budget(self, budget_minor: int, currency: str, required_keys: list[str], optional_keys: list[str]) -> dict:
-        required = await self.evaluate_budget(budget_minor, currency, required_keys)
-        if required["status"] != "feasible":
-            return {**required, "included": required_keys, "excluded": optional_keys}
-        remaining = required["remaining_minor"]
+    async def plan_budget(
+        self, budget_minor: int, currency: str, required_keys: list[str], optional_keys: list[str],
+        trip_days: int = 1, transport_keys: list[str] | None = None, daily_keys: list[str] | None = None,
+    ) -> dict:
+        """Plan with fresh one-off transport and per-day costs, never a guessed timetable."""
+        transport_keys = transport_keys or []
+        daily_keys = daily_keys or []
+        quantities: dict[str, int] = {}
+        for key in [*required_keys, *transport_keys]:
+            quantities[key] = quantities.get(key, 0) + 1
+        for key in daily_keys:
+            quantities[key] = quantities.get(key, 0) + trip_days
+        required_quotes = {key: await self.latest(key) for key in quantities}
+        missing = [key for key, quote in required_quotes.items() if quote["status"] != "fresh"]
+        mismatched = [
+            key for key, quote in required_quotes.items()
+            if quote.get("currency") not in {None, currency}
+        ]
+        included_required = [*required_keys, *transport_keys, *daily_keys]
+        if missing or mismatched:
+            return {
+                "status": "unknown", "budget_minor": budget_minor, "currency": currency,
+                "trip_days": trip_days, "missing": missing, "currency_mismatch": mismatched,
+                "included": included_required, "excluded": optional_keys,
+            }
+        required_total = sum(int(required_quotes[key]["amount_minor"]) * quantity for key, quantity in quantities.items())
+        breakdown = [
+            {
+                "subject_key": key, "quantity": quantity,
+                "unit_minor": int(required_quotes[key]["amount_minor"]),
+                "total_minor": int(required_quotes[key]["amount_minor"]) * quantity,
+            }
+            for key, quantity in quantities.items()
+        ]
+        if required_total > budget_minor:
+            return {
+                "status": "infeasible", "budget_minor": budget_minor, "currency": currency,
+                "trip_days": trip_days, "total_minor": required_total,
+                "remaining_minor": budget_minor - required_total, "missing": [], "currency_mismatch": [],
+                "included": included_required, "excluded": optional_keys, "required_breakdown": breakdown,
+            }
+        remaining = budget_minor - required_total
         optional_quotes = [await self.latest(key) for key in optional_keys]
         unavailable = [quote["subject_key"] for quote in optional_quotes if quote["status"] != "fresh" or quote.get("currency") != currency]
         candidates = sorted(
             (quote for quote in optional_quotes if quote["subject_key"] not in unavailable),
             key=lambda quote: (int(quote["amount_minor"]), quote["subject_key"]),
         )
-        included, excluded = list(required_keys), list(unavailable)
+        included, excluded = included_required, list(unavailable)
         for quote in candidates:
             if int(quote["amount_minor"]) <= remaining:
                 included.append(quote["subject_key"])
                 remaining -= int(quote["amount_minor"])
             else:
                 excluded.append(quote["subject_key"])
-        return {"status": "feasible" if not excluded else "compromise", "budget_minor": budget_minor, "currency": currency, "total_minor": budget_minor - remaining, "remaining_minor": remaining, "included": included, "excluded": excluded, "unavailable": unavailable}
+        return {
+            "status": "feasible" if not excluded else "compromise", "budget_minor": budget_minor,
+            "currency": currency, "trip_days": trip_days, "total_minor": budget_minor - remaining,
+            "remaining_minor": remaining, "included": included, "excluded": excluded,
+            "unavailable": unavailable, "required_breakdown": breakdown,
+        }

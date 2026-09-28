@@ -12,7 +12,10 @@ class BudgetCheckIn(BaseModel):
 class BudgetPlanIn(BaseModel):
     budget_minor: int = Field(ge=0)
     currency: str = Field(min_length=3, max_length=3)
+    trip_days: int = Field(default=1, ge=1, le=60)
     required_subject_keys: list[str] = Field(default_factory=list, max_length=100)
+    transport_subject_keys: list[str] = Field(default_factory=list, max_length=100)
+    daily_subject_keys: list[str] = Field(default_factory=list, max_length=100)
     optional_subject_keys: list[str] = Field(default_factory=list, max_length=100)
 class PriceWatchIn(BaseModel):
     subject_key: str = Field(min_length=1, max_length=200)
@@ -25,7 +28,11 @@ async def budget_check(payload: BudgetCheckIn, prices: PriceService = Depends(ge
 
 @router.post("/budget-plan")
 async def budget_plan(payload: BudgetPlanIn, prices: PriceService = Depends(get_price_service)):
-    return await prices.plan_budget(payload.budget_minor, payload.currency.upper(), payload.required_subject_keys, payload.optional_subject_keys)
+    return await prices.plan_budget(
+        payload.budget_minor, payload.currency.upper(), payload.required_subject_keys,
+        payload.optional_subject_keys, payload.trip_days, payload.transport_subject_keys,
+        payload.daily_subject_keys,
+    )
 
 @router.get("/watches")
 async def list_watches(user: dict = Depends(get_current_user), prices: PriceService = Depends(get_price_service)):
