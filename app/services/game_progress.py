@@ -448,7 +448,7 @@ class GameProgressService:
             if wiki_reference and language == "en":
                 english_wiki_version = await db.scalar(
                     select(WikiArticleVersion.id).where(
-                        WikiArticleVersion.id == "wiki-moscow-en-v1",
+                        WikiArticleVersion.id == "wiki-moscow-en-v2",
                         WikiArticleVersion.status == "published",
                     )
                 )
