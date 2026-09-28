@@ -73,3 +73,23 @@ class PriceService:
             return {"status": "unknown", "budget_minor": budget_minor, "currency": currency, "missing": missing, "currency_mismatch": mismatched}
         total = sum(int(quote["amount_minor"]) for quote in quotes)
         return {"status": "feasible" if total <= budget_minor else "infeasible", "budget_minor": budget_minor, "currency": currency, "total_minor": total, "remaining_minor": budget_minor - total, "missing": [], "currency_mismatch": []}
+
+    async def plan_budget(self, budget_minor: int, currency: str, required_keys: list[str], optional_keys: list[str]) -> dict:
+        required = await self.evaluate_budget(budget_minor, currency, required_keys)
+        if required["status"] != "feasible":
+            return {**required, "included": required_keys, "excluded": optional_keys}
+        remaining = required["remaining_minor"]
+        optional_quotes = [await self.latest(key) for key in optional_keys]
+        unavailable = [quote["subject_key"] for quote in optional_quotes if quote["status"] != "fresh" or quote.get("currency") != currency]
+        candidates = sorted(
+            (quote for quote in optional_quotes if quote["subject_key"] not in unavailable),
+            key=lambda quote: (int(quote["amount_minor"]), quote["subject_key"]),
+        )
+        included, excluded = list(required_keys), list(unavailable)
+        for quote in candidates:
+            if int(quote["amount_minor"]) <= remaining:
+                included.append(quote["subject_key"])
+                remaining -= int(quote["amount_minor"])
+            else:
+                excluded.append(quote["subject_key"])
+        return {"status": "feasible" if not excluded else "compromise", "budget_minor": budget_minor, "currency": currency, "total_minor": budget_minor - remaining, "remaining_minor": remaining, "included": included, "excluded": excluded, "unavailable": unavailable}
