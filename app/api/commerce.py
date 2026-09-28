@@ -31,6 +31,25 @@ class AffiliateOfferUpdateIn(BaseModel):
     status: Literal["draft", "active", "archived"] | None = None
 
 
+class CommerceProductCreateIn(BaseModel):
+    sku: str = Field(min_length=2, max_length=80)
+    kind: Literal["subscription", "expedition", "energy_pack", "cosmetic"]
+    title: str = Field(min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=4000)
+    price_minor: int = Field(ge=0)
+    currency: str = Field(min_length=3, max_length=3)
+    provider_product_ref: str | None = Field(default=None, max_length=160)
+
+
+class CommerceProductUpdateIn(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=4000)
+    price_minor: int | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    provider_product_ref: str | None = Field(default=None, max_length=160)
+    status: Literal["draft", "active", "archived"] | None = None
+
+
 def _affiliate_error(error: Exception) -> HTTPException:
     if isinstance(error, PermissionError):
         return HTTPException(status_code=HTTP_403_FORBIDDEN, detail=str(error))
@@ -39,9 +58,53 @@ def _affiliate_error(error: Exception) -> HTTPException:
     return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(error))
 
 
+def _catalog_error(error: Exception) -> HTTPException:
+    if isinstance(error, PermissionError):
+        return HTTPException(status_code=HTTP_403_FORBIDDEN, detail=str(error))
+    if isinstance(error, CommerceNotFoundError):
+        return HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Позиция каталога не найдена")
+    return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(error))
+
+
 @router.get("/catalog")
 async def list_catalog(commerce: CommerceService = Depends(get_commerce_service)):
     return await commerce.list_catalog()
+
+
+@router.get("/editor/catalog")
+async def list_catalog_for_editor(
+    user: dict = Depends(get_current_user),
+    commerce: CommerceService = Depends(get_commerce_service),
+):
+    try:
+        return await commerce.list_catalog_for_editor(user["sub"])
+    except PermissionError as error:
+        raise _catalog_error(error)
+
+
+@router.post("/editor/catalog")
+async def create_catalog_product(
+    payload: CommerceProductCreateIn,
+    user: dict = Depends(get_current_user),
+    commerce: CommerceService = Depends(get_commerce_service),
+):
+    try:
+        return await commerce.create_catalog_product(user["sub"], payload.model_dump())
+    except (PermissionError, CommerceValidationError) as error:
+        raise _catalog_error(error)
+
+
+@router.patch("/editor/catalog/{sku}")
+async def update_catalog_product(
+    sku: str,
+    payload: CommerceProductUpdateIn,
+    user: dict = Depends(get_current_user),
+    commerce: CommerceService = Depends(get_commerce_service),
+):
+    try:
+        return await commerce.update_catalog_product(user["sub"], sku, payload.model_dump(exclude_unset=True))
+    except (PermissionError, CommerceNotFoundError, CommerceValidationError) as error:
+        raise _catalog_error(error)
 
 
 @router.get("/affiliate-offers")

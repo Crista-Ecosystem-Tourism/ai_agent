@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 import uuid
 from typing import Any
 from urllib.parse import urlsplit
@@ -46,6 +47,60 @@ class CommerceService:
                 "checkout_available": False,
                 "products": [self._product_payload(product) for product in products],
             }
+
+    async def list_catalog_for_editor(self, editor_id: str) -> list[dict]:
+        await self._require_editor(editor_id)
+        async with self.session_factory() as db:
+            products = (await db.scalars(select(CommerceProduct).order_by(CommerceProduct.updated_at.desc()))).all()
+        return [self._editor_product_payload(product) for product in products]
+
+    async def create_catalog_product(self, editor_id: str, payload: dict[str, Any]) -> dict:
+        await self._require_editor(editor_id)
+        now = self._clock()
+        product = CommerceProduct(
+            sku=self._sku(payload["sku"]),
+            kind=payload["kind"],
+            title=self._text(payload["title"], "Название", 160),
+            description=self._optional_text(payload.get("description"), 4000),
+            price_minor=payload["price_minor"],
+            currency=self._currency(payload["currency"]),
+            status="draft",
+            provider_product_ref=self._optional_text(payload.get("provider_product_ref"), 160),
+            created_at=now,
+            updated_at=now,
+        )
+        async with self.session_factory() as db:
+            if await db.get(CommerceProduct, product.sku) is not None:
+                raise CommerceValidationError("SKU уже существует")
+            db.add(product)
+            await db.commit()
+        return self._editor_product_payload(product)
+
+    async def update_catalog_product(self, editor_id: str, sku: str, payload: dict[str, Any]) -> dict:
+        await self._require_editor(editor_id)
+        if not payload:
+            raise CommerceValidationError("Не переданы поля для изменения")
+        async with self.session_factory() as db:
+            product = await db.get(CommerceProduct, sku)
+            if product is None:
+                raise CommerceNotFoundError(sku)
+            if "title" in payload:
+                product.title = self._text(payload["title"], "Название", 160)
+            if "description" in payload:
+                product.description = self._optional_text(payload["description"], 4000)
+            if "price_minor" in payload:
+                product.price_minor = payload["price_minor"]
+            if "currency" in payload:
+                product.currency = self._currency(payload["currency"])
+            if "provider_product_ref" in payload:
+                product.provider_product_ref = self._optional_text(payload["provider_product_ref"], 160)
+            if "status" in payload:
+                product.status = payload["status"]
+            if product.status == "active" and not product.provider_product_ref:
+                raise CommerceValidationError("Для active-позиции нужен provider reference")
+            product.updated_at = self._clock()
+            await db.commit()
+        return self._editor_product_payload(product)
 
     async def list_affiliate_offers(self) -> list[dict]:
         async with self.session_factory() as db:
@@ -147,6 +202,15 @@ class CommerceService:
             "currency": product.currency,
         }
 
+    @classmethod
+    def _editor_product_payload(cls, product: CommerceProduct) -> dict:
+        return {
+            **cls._product_payload(product),
+            "status": product.status,
+            "provider_product_ref": product.provider_product_ref,
+            "updated_at": product.updated_at.isoformat(),
+        }
+
     @staticmethod
     def _entitlement_payload(entitlement: CommerceEntitlement) -> dict:
         return {
@@ -167,6 +231,25 @@ class CommerceService:
         if not cleaned:
             raise CommerceValidationError(f"{label} не может быть пустым")
         return cleaned[:max_length]
+
+    @staticmethod
+    def _optional_text(value: Any, max_length: int) -> str | None:
+        cleaned = value.strip()[:max_length] if isinstance(value, str) else ""
+        return cleaned or None
+
+    @staticmethod
+    def _sku(value: Any) -> str:
+        cleaned = value.strip().lower() if isinstance(value, str) else ""
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,79}", cleaned):
+            raise CommerceValidationError("SKU должен содержать 2–80 строчных букв, цифр, _ или -")
+        return cleaned
+
+    @staticmethod
+    def _currency(value: Any) -> str:
+        cleaned = value.strip().upper() if isinstance(value, str) else ""
+        if not re.fullmatch(r"[A-Z]{3}", cleaned):
+            raise CommerceValidationError("Валюта должна состоять из трёх латинских букв")
+        return cleaned
 
     @staticmethod
     def _https_url(value: Any, label: str) -> str:
