@@ -31,6 +31,10 @@ async def budget_plan(payload: BudgetPlanIn, prices: PriceService = Depends(get_
 async def list_watches(user: dict = Depends(get_current_user), prices: PriceService = Depends(get_price_service)):
     return await prices.list_watches(user["sub"])
 
+@router.get("/alerts")
+async def list_alerts(user: dict = Depends(get_current_user), prices: PriceService = Depends(get_price_service)):
+    return await prices.list_alerts(user["sub"])
+
 @router.post("/watches")
 async def subscribe_watch(payload: PriceWatchIn, user: dict = Depends(get_current_user), prices: PriceService = Depends(get_price_service)):
     return await prices.subscribe(user["sub"], payload.subject_key, payload.threshold_minor, payload.currency.upper())

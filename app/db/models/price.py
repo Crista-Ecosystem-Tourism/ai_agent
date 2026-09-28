@@ -45,3 +45,15 @@ class PriceWatch(Base, TimestampMixin):
         UniqueConstraint("user_id", "subject_key", "currency", name="uq_price_watch_user_subject_currency"),
         Index("idx_price_watch_active_subject", "active", "subject_key"),
     )
+
+
+class PriceWatchAlert(Base):
+    __tablename__ = "price_watch_alert"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    watch_id: Mapped[str] = mapped_column(ForeignKey("price_watch.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
+    subject_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (Index("idx_price_watch_alert_user_created", "user_id", "created_at"),)

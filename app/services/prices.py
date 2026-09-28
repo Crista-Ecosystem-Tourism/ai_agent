@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models.price import PriceObservation, PriceWatch
+from app.db.models.price import PriceObservation, PriceWatch, PriceWatchAlert
 
 
 class PriceSourceNotAllowedError(ValueError):
@@ -101,10 +101,16 @@ class PriceService:
                 watch.last_alerted_amount_minor = quote.amount_minor
                 watch.last_alerted_at = now
                 watch.updated_at = now
+                db.add(PriceWatchAlert(id=uuid.uuid4().hex, watch_id=watch.id, user_id=watch.user_id, subject_key=watch.subject_key, amount_minor=quote.amount_minor, currency=quote.currency, created_at=now))
                 changed += 1
             if changed:
                 await db.commit()
         return changed
+
+    async def list_alerts(self, user_id: str) -> list[dict]:
+        async with self.session_factory() as db:
+            rows = (await db.scalars(select(PriceWatchAlert).where(PriceWatchAlert.user_id == user_id).order_by(PriceWatchAlert.created_at.desc()).limit(100))).all()
+        return [{"id": row.id, "subject_key": row.subject_key, "amount_minor": row.amount_minor, "currency": row.currency, "created_at": row.created_at.isoformat()} for row in rows]
 
     async def evaluate_budget(self, budget_minor: int, currency: str, subject_keys: list[str]) -> dict:
         quotes = [await self.latest(subject_key) for subject_key in subject_keys]
