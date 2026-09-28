@@ -82,6 +82,30 @@ class PriceService:
             rows = (await db.scalars(select(PriceWatch).where(PriceWatch.user_id == user_id).order_by(PriceWatch.created_at.desc()))).all()
         return [{"id": row.id, "subject_key": row.subject_key, "threshold_minor": row.threshold_minor, "currency": row.currency, "active": row.active} for row in rows]
 
+    async def process_watches(self) -> int:
+        """Advance dedupe state only for a fresh price below the chosen threshold."""
+        now = datetime.now(timezone.utc)
+        changed = 0
+        async with self.session_factory() as db:
+            watches = (await db.scalars(select(PriceWatch).where(PriceWatch.active.is_(True)))).all()
+            for watch in watches:
+                quote = await db.scalar(select(PriceObservation).where(
+                    PriceObservation.subject_key == watch.subject_key,
+                    PriceObservation.currency == watch.currency,
+                    PriceObservation.expires_at > now,
+                ).order_by(PriceObservation.observed_at.desc()))
+                if quote is None or quote.amount_minor > watch.threshold_minor:
+                    continue
+                if watch.last_alerted_amount_minor is not None and quote.amount_minor >= watch.last_alerted_amount_minor:
+                    continue
+                watch.last_alerted_amount_minor = quote.amount_minor
+                watch.last_alerted_at = now
+                watch.updated_at = now
+                changed += 1
+            if changed:
+                await db.commit()
+        return changed
+
     async def evaluate_budget(self, budget_minor: int, currency: str, subject_keys: list[str]) -> dict:
         quotes = [await self.latest(subject_key) for subject_key in subject_keys]
         missing = [quote["subject_key"] for quote in quotes if quote["status"] != "fresh"]

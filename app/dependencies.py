@@ -16,6 +16,7 @@ from app.services.game_progress import GameProgressService
 from app.services.wiki import WikiService
 from app.services.social import SocialService
 from app.services.league_scheduler import league_settlement_loop
+from app.services.price_scheduler import price_watch_loop
 from app.services.tips import TipService
 from app.services.media import MediaService
 from app.services.commerce import CommerceService
@@ -158,12 +159,18 @@ async def lifespan(app: FastAPI):
             _ai_unavailable_reason = "AI provider initialization failed"
 
     league_settlement_task = asyncio.create_task(league_settlement_loop(_social_service))
+    price_watch_task = asyncio.create_task(price_watch_loop(_price_service))
     try:
         yield
     finally:
         league_settlement_task.cancel()
+        price_watch_task.cancel()
         try:
             await league_settlement_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await price_watch_task
         except asyncio.CancelledError:
             pass
         if _http_client:
