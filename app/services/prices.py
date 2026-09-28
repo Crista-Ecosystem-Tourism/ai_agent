@@ -82,6 +82,18 @@ class PriceService:
             rows = (await db.scalars(select(PriceWatch).where(PriceWatch.user_id == user_id).order_by(PriceWatch.created_at.desc()))).all()
         return [{"id": row.id, "subject_key": row.subject_key, "threshold_minor": row.threshold_minor, "currency": row.currency, "active": row.active} for row in rows]
 
+    async def unsubscribe(self, user_id: str, watch_id: str) -> bool:
+        now = datetime.now(timezone.utc)
+        async with self.session_factory() as db:
+            watch = await db.scalar(select(PriceWatch).where(PriceWatch.id == watch_id, PriceWatch.user_id == user_id))
+            if watch is None:
+                return False
+            if watch.active:
+                watch.active = False
+                watch.updated_at = now
+                await db.commit()
+            return True
+
     async def process_watches(self) -> int:
         """Advance dedupe state only for a fresh price below the chosen threshold."""
         now = datetime.now(timezone.utc)

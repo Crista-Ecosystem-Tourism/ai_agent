@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from app.security.deps import get_current_user
 from app.dependencies import get_price_service
@@ -38,6 +38,12 @@ async def list_alerts(user: dict = Depends(get_current_user), prices: PriceServi
 @router.post("/watches")
 async def subscribe_watch(payload: PriceWatchIn, user: dict = Depends(get_current_user), prices: PriceService = Depends(get_price_service)):
     return await prices.subscribe(user["sub"], payload.subject_key, payload.threshold_minor, payload.currency.upper())
+
+@router.delete("/watches/{watch_id}")
+async def unsubscribe_watch(watch_id: str, user: dict = Depends(get_current_user), prices: PriceService = Depends(get_price_service)):
+    if not await prices.unsubscribe(user["sub"], watch_id):
+        raise HTTPException(status_code=404, detail="Подписка не найдена")
+    return {"ok": True}
 
 @router.get("/{subject_key}")
 async def latest_price(subject_key: str, prices: PriceService = Depends(get_price_service)):
