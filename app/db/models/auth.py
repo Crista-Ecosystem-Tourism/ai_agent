@@ -18,6 +18,8 @@ class User(Base, TimestampMixin):
     is_editor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     vision_consent_granted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     vision_consent_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    presence_consent_granted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    presence_consent_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     preferred_theme: Mapped[str] = mapped_column(String, default="dark", nullable=False)
     preferred_language: Mapped[str] = mapped_column(String, default="ru", nullable=False)
     auth_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 'password', 'google', 'github', ...
