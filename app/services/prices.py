@@ -64,3 +64,12 @@ class PriceService:
             "currency": row.currency, "source": row.source, "source_url": row.source_url,
             "observed_at": row.observed_at.isoformat(), "expires_at": row.expires_at.isoformat(),
         }
+
+    async def evaluate_budget(self, budget_minor: int, currency: str, subject_keys: list[str]) -> dict:
+        quotes = [await self.latest(subject_key) for subject_key in subject_keys]
+        missing = [quote["subject_key"] for quote in quotes if quote["status"] != "fresh"]
+        mismatched = [quote["subject_key"] for quote in quotes if quote.get("currency") not in {None, currency}]
+        if missing or mismatched:
+            return {"status": "unknown", "budget_minor": budget_minor, "currency": currency, "missing": missing, "currency_mismatch": mismatched}
+        total = sum(int(quote["amount_minor"]) for quote in quotes)
+        return {"status": "feasible" if total <= budget_minor else "infeasible", "budget_minor": budget_minor, "currency": currency, "total_minor": total, "remaining_minor": budget_minor - total, "missing": [], "currency_mismatch": []}
