@@ -22,6 +22,7 @@ from app.services.media import MediaService
 from app.services.commerce import CommerceService
 from app.services.prices import PriceService
 from app.services.price_feeds import PriceFeedCollector
+from app.services.star_routes import StarRouteService
 from app.core.media_storage import create_media_storage
 
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -48,6 +49,7 @@ _media_service: MediaService | None = None
 _commerce_service: CommerceService | None = None
 _price_service: PriceService | None = None
 _price_feed_collector: PriceFeedCollector | None = None
+_star_route_service: StarRouteService | None = None
 
 _llm_model: OpenAIChatModel | None = None
 _preferences_agent: PreferencesAgent | None = None
@@ -88,6 +90,7 @@ def get_runtime_status() -> dict[str, object]:
         _media_service is not None,
         _commerce_service is not None,
         _price_service is not None,
+        _star_route_service is not None,
     ))
     return {
         "core_ready": core_ready,
@@ -104,7 +107,7 @@ def get_runtime_status() -> dict[str, object]:
 async def lifespan(app: FastAPI):
     global _engine, _session_factory, _http_client
     global _history_service, _chat_session_service, _user_service, _saved_route_service, _game_progress_service, _wiki_service, _social_service
-    global _tip_service, _price_service, _price_feed_collector
+    global _tip_service, _price_service, _price_feed_collector, _star_route_service
     global _media_service, _commerce_service
     global _llm_model, _preferences_agent, _search_agent, _message_processor
     global _ai_available, _ai_unavailable_reason
@@ -136,6 +139,7 @@ async def lifespan(app: FastAPI):
     _commerce_service = CommerceService(_session_factory)
     _price_service = PriceService(_session_factory)
     _price_feed_collector = PriceFeedCollector(_price_service, _http_client)
+    _star_route_service = StarRouteService(_session_factory, _http_client)
 
     api_key = _configured_openrouter_key()
     if api_key is None:
@@ -202,6 +206,7 @@ async def lifespan(app: FastAPI):
         _commerce_service = None
         _price_service = None
         _price_feed_collector = None
+        _star_route_service = None
         _llm_model = None
         _preferences_agent = None
         _search_agent = None
@@ -258,6 +263,10 @@ def get_commerce_service() -> CommerceService:
 
 def get_price_service() -> PriceService:
     return _price_service
+
+
+def get_star_route_service() -> StarRouteService:
+    return _star_route_service
 
 def get_message_processor() -> MessageProcessor:
     if _message_processor is None:
