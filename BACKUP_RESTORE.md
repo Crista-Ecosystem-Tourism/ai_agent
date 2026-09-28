@@ -12,6 +12,15 @@ BACKUP_DIR=/srv/backups/crista RETENTION_DAYS=14 ./ops/backup_postgres.sh
 
 The script creates a PostgreSQL custom-format dump and SHA-256 sidecar. With `MEDIA_STORAGE_BACKEND=local` and `MEDIA_STORAGE_DIR` set, it also creates a media archive and checksum. Copy both artifacts to independent durable storage before retention removes local copies.
 
+Verify an artifact after copying it, before using it for recovery:
+
+```bash
+BACKUP_DIR=/srv/backups/crista \
+./ops/verify_backup.sh crista-postgres-20260101T000000Z.dump
+```
+
+Verification checks the PostgreSQL checksum and catalog readability. When a matching local-media archive exists, it verifies its checksum and archive structure too.
+
 For S3-compatible media, enable bucket versioning and provider backups for the configured prefix. The application keeps media private and does not contain object-storage credentials in a backup artifact.
 
 ## Restore
