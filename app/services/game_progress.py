@@ -25,7 +25,7 @@ from app.db.models.game import (
     GameStamp,
 )
 from app.db.models.saved_route import SavedRoute
-from app.db.models.wiki import WikiArticleVersion
+from app.db.models.wiki import WikiArticle, WikiArticleVersion
 from app.db.models.auth import User
 from app.core.social_tokens import shared_quest_reward_key
 from app.security.jwt import JWT_ALG, JWT_SECRET
@@ -132,6 +132,19 @@ class GameProgressService:
                     select(GameContentRevision).where(GameContentRevision.id.in_(content_ids))
                 )).all()
             } if content_ids else {}
+            city_ids = {city.id for city in cities}
+            wiki_licenses = {
+                slug: license.strip()
+                for slug, license in (await db.execute(
+                    select(WikiArticle.slug, WikiArticleVersion.license)
+                    .join(WikiArticleVersion, WikiArticleVersion.id == WikiArticle.published_version_id)
+                    .where(
+                        WikiArticle.slug.in_(city_ids),
+                        WikiArticleVersion.status == "published",
+                    )
+                )).all()
+                if isinstance(license, str) and license.strip()
+            } if city_ids else {}
 
             rows: list[dict[str, Any]] = []
             for city in cities:
@@ -144,7 +157,9 @@ class GameProgressService:
                     if content and content.is_published and isinstance(fact, dict) and isinstance(fact.get("source_url"), str):
                         source_ready += 1
                 meets_required_count = len(published_quests) >= city.required_quest_count
-                ready = city.is_published and meets_required_count and source_ready == len(published_quests)
+                wiki_license = wiki_licenses.get(city.id)
+                wiki_published = wiki_license is not None
+                ready = city.is_published and meets_required_count and source_ready == len(published_quests) and wiki_published
                 rows.append({
                     "id": city.id,
                     "name": city.name,
@@ -153,6 +168,8 @@ class GameProgressService:
                     "required_quest_count": city.required_quest_count,
                     "published_quest_count": len(published_quests),
                     "sourced_quest_count": source_ready,
+                    "wiki_published": wiki_published,
+                    "wiki_license": wiki_license,
                     "status": "ready" if ready else "draft",
                 })
             return rows
