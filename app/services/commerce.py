@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models.commerce import CommerceEntitlement, CommerceProduct
+from app.db.models.commerce import AffiliateOffer, CommerceEntitlement, CommerceProduct
 
 
 class CommerceCheckoutUnavailableError(RuntimeError):
@@ -34,6 +34,11 @@ class CommerceService:
                 "checkout_available": False,
                 "products": [self._product_payload(product) for product in products],
             }
+
+    async def list_affiliate_offers(self) -> list[dict]:
+        async with self.session_factory() as db:
+            rows = (await db.scalars(select(AffiliateOffer).where(AffiliateOffer.status == "active").order_by(AffiliateOffer.partner, AffiliateOffer.title))).all()
+        return [{"id": row.id, "partner": row.partner, "title": row.title, "destination_url": row.destination_url, "terms_url": row.terms_url} for row in rows]
 
     async def list_entitlements(self, user_id: str) -> dict:
         now = self._clock()

@@ -16,6 +16,11 @@ async def list_catalog(commerce: CommerceService = Depends(get_commerce_service)
     return await commerce.list_catalog()
 
 
+@router.get("/affiliate-offers")
+async def list_affiliate_offers(commerce: CommerceService = Depends(get_commerce_service)):
+    return await commerce.list_affiliate_offers()
+
+
 @router.get("/entitlements")
 async def list_entitlements(
     user: dict = Depends(get_current_user),

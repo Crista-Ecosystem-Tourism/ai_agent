@@ -101,3 +101,15 @@ class CommercePaymentEvent(Base):
         UniqueConstraint("provider", "provider_event_ref", name="uq_commerce_payment_event_provider_reference"),
         Index("idx_commerce_payment_event_order", "order_id", "received_at"),
     )
+
+
+class AffiliateOffer(Base, TimestampMixin):
+    """A contract-backed external offer; inactive rows never reach clients."""
+    __tablename__ = "affiliate_offer"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    partner: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    destination_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    terms_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    __table_args__ = (CheckConstraint("status IN ('draft', 'active', 'archived')", name="affiliate_offer_status"),)
