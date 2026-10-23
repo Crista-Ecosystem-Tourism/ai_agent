@@ -101,6 +101,7 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         passport = await self.game.get_passport(self.user_id)
         self.assertEqual(passport["profile"], correct["profile"])
+        self.assertEqual(passport["daily"], correct["daily"])
         self.assertEqual(passport["stamps"][0]["key"], "moscow-starter")
         self.assertEqual(next(city for city in passport["cities"] if city["id"] == "moscow")["completed_quests"], 1)
         async with self.sessions() as db:

@@ -105,9 +105,11 @@ class GameProgressService:
                 .where(SavedRoute.user_id == user_id)
                 .order_by(SavedRoute.updated_at.desc())
             )).all()
+            daily = await self._daily_payload(db, user_id, profile)
             await db.commit()
             return {
                 "profile": self._profile_payload(profile),
+                "daily": daily,
                 "stamps": [self._stamp_payload(stamp) for stamp in stamps],
                 "cities": [
                     {"id": city.id, "name": city.name, "completed_quests": completed_by_city.get(city.id, 0), "required_quest_count": city.required_quest_count}
