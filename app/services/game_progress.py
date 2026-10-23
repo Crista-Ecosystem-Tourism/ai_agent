@@ -28,6 +28,7 @@ from app.db.models.saved_route import SavedRoute
 from app.db.models.wiki import WikiArticle, WikiArticleVersion
 from app.db.models.auth import User
 from app.core.social_tokens import shared_quest_reward_key
+from app.core.streak_policy import next_streak, visible_streak
 from app.security.jwt import JWT_ALG, JWT_SECRET
 from app.services.wiki import has_complete_provenance
 
@@ -1159,11 +1160,7 @@ class GameProgressService:
     ) -> None:
         activity_date = completed_at.astimezone(GAME_TIMEZONE).date()
         if profile.last_activity_on != activity_date:
-            profile.streak = (
-                profile.streak + 1
-                if profile.last_activity_on == activity_date - timedelta(days=1)
-                else 1
-            )
+            profile.streak = next_streak(profile.streak, profile.last_activity_on, activity_date)
             profile.last_activity_on = activity_date
 
         daily = await db.get(GameDailyProgress, (user_id, activity_date))
@@ -1186,7 +1183,7 @@ class GameProgressService:
         completed = daily.completed_quests if daily is not None else 0
         return {
             "timezone": "Europe/Moscow",
-            "streak": profile.streak,
+            "streak": visible_streak(profile.streak, profile.last_activity_on, today),
             "completed_quests": completed,
             "goal": DAILY_GOAL_QUESTS,
             "goal_reached": daily is not None and daily.goal_reached_at is not None,
@@ -1609,9 +1606,9 @@ class GameProgressService:
             raise GameContentUnavailableError("Moscow sandbox Wiki reference is invalid")
         return {"slug": slug, "version_id": version_id}
 
-    @staticmethod
-    def _profile_payload(profile: GameProfile) -> dict[str, Any]:
-        return {"xp": profile.xp, "energy": profile.energy, "streak": profile.streak}
+    def _profile_payload(self, profile: GameProfile) -> dict[str, Any]:
+        streak = visible_streak(profile.streak, profile.last_activity_on, self._today())
+        return {"xp": profile.xp, "energy": profile.energy, "streak": streak}
 
     def _practice_recovery_payload(self, profile: GameProfile) -> dict[str, Any]:
         today = self._today()
