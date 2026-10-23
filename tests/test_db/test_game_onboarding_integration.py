@@ -391,7 +391,9 @@ class GameOnboardingIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         clock[0] = datetime(2026, 9, 4, 9, tzinfo=timezone.utc)  # Moscow day 4: day 3 was skipped
         skipped_day = await game.get_onboarding(self.user_id)
-        self.assertEqual(skipped_day["profile"], {"xp": 75, "energy": 5, "streak": 2})
+        # A missed Moscow day is visible as a broken streak before the next answer.
+        self.assertEqual(skipped_day["profile"], {"xp": 75, "energy": 5, "streak": 0})
+        self.assertEqual(skipped_day["daily"]["streak"], 0)
         reset_streak = await game.answer_moscow_quest(self.user_id, "moscow-tsar-bell", "1735")
         self.assertEqual(reset_streak["profile"], {"xp": 100, "energy": 5, "streak": 1})
         self.assertEqual(reset_streak["daily"]["completed_quests"], 1)
